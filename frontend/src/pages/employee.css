@@ -1,0 +1,374 @@
+.employee-app {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 20% 25%, #e9f2ff 0, transparent 28%),
+    radial-gradient(circle at 90% 65%, #f8efff 0, transparent 30%),
+    #f8fafc;
+  color: #11264d;
+}
+
+.employee-topbar {
+  height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  background: #fff;
+  border-bottom: 1px solid #dfe5ed;
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+}
+
+.bosch-logo-image {
+  display: block;
+  width: 90px;
+  height: 44px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.topbar-divider {
+  width: 1px;
+  height: 34px;
+  margin: 0 17px;
+  background: #dce2ea;
+}
+
+.topbar-brand h1 {
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.topbar-brand p {
+  margin-top: 3px;
+  color: #607493;
+  font-size: 13px;
+}
+
+.employee-profile {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #25344c;
+  font-size: 13px;
+}
+
+.profile-avatar,
+.small-avatar {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #1261e9;
+  background: #e4efff;
+}
+
+.profile-avatar {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #c5ddff;
+  font-size: 12px;
+}
+
+.employee-body {
+  display: flex;
+  min-height: calc(100vh - 68px);
+}
+
+.employee-sidebar {
+  width: 270px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px;
+  background: #fff;
+  border-right: 1px solid #dfe5ed;
+}
+
+.sidebar-item {
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 13px;
+  margin-bottom: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #30496f;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebar-item.active {
+  color: #fff;
+  background: #132e65;
+}
+
+.sidebar-bottom {
+  border-top: 1px solid #edf0f4;
+  padding-top: 14px;
+}
+
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 13px;
+}
+
+.small-avatar {
+  width: 34px;
+  height: 34px;
+  font-size: 11px;
+}
+
+.sidebar-user strong,
+.sidebar-user span {
+  display: block;
+}
+
+.sidebar-user strong {
+  font-size: 12px;
+}
+
+.sidebar-user span {
+  margin-top: 3px;
+  color: #8a9ab0;
+  font-size: 10px;
+}
+
+.logout-button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 10px;
+  border: 0;
+  background: transparent;
+  color: #e20015;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.employee-main {
+  width: min(1150px, calc(100% - 70px));
+  margin: 0 auto;
+  padding: 29px 0 40px;
+}
+
+.studio-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #4534ff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.3px;
+}
+
+.studio-heading h2 {
+  margin-top: 10px;
+  font-size: 27px;
+  letter-spacing: -0.5px;
+}
+
+.studio-heading > p {
+  max-width: 850px;
+  margin-top: 8px;
+  color: #5c7598;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.studio-heading {
+  padding-bottom: 17px;
+  border-bottom: 1px solid #dce3ec;
+}
+
+.studio-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-top: 23px;
+}
+
+.studio-card {
+  min-height: 267px;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 23px 17px;
+  border: 1px solid #dce4ed;
+  border-radius: 17px;
+  background: #fff;
+  box-shadow: 0 3px 8px rgba(27, 47, 74, 0.04);
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+.studio-card:hover {
+  transform: translateY(-2px);
+  border-color: #c8d7ec;
+  box-shadow: 0 8px 20px rgba(27, 47, 74, 0.08);
+}
+
+.card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card-icon {
+  width: 45px;
+  height: 45px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+}
+
+.card-icon.blue {
+  color: #1264f5;
+  border: 1px solid #bdd9ff;
+  background: #eff6ff;
+}
+
+.card-icon.purple {
+  color: #4938ff;
+  border: 1px solid #cdd0ff;
+  background: #f2f2ff;
+}
+
+.card-icon.green {
+  color: #008e69;
+  border: 1px solid #aeeed8;
+  background: #edfcf6;
+}
+
+.card-tag {
+  padding: 5px 10px;
+  border-radius: 12px;
+  background: #f1f5f9;
+  color: #50647f;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.studio-card h3 {
+  margin-top: 17px;
+  font-size: 18px;
+}
+
+.studio-card > p {
+  margin-top: 9px;
+  color: #627898;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.card-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 15px;
+  border-top: 1px solid #edf0f4;
+}
+
+.card-action strong {
+  font-size: 12px;
+}
+
+.card-action span {
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #f1f5f9;
+  color: #647993;
+}
+
+.intelligence-panel {
+  margin-top: 23px;
+  padding: 21px 24px;
+  border: 1px solid #dce4ed;
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.intelligence-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #142b55;
+  font-size: 13px;
+}
+
+.intelligence-title svg {
+  color: #1765f5;
+}
+
+.intelligence-panel p {
+  max-width: 920px;
+  margin-top: 12px;
+  color: #607492;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.intelligence-status {
+  display: flex;
+  gap: 30px;
+  margin-top: 12px;
+  color: #68809f;
+  font-size: 12px;
+}
+
+.intelligence-status span::first-letter {
+  color: #00a77d;
+}
+
+@media (max-width: 1000px) {
+  .employee-sidebar {
+    width: 220px;
+  }
+
+  .employee-main {
+    width: calc(100% - 40px);
+  }
+
+  .studio-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .employee-topbar {
+    padding: 0 16px;
+  }
+
+  .topbar-brand p,
+  .employee-profile strong {
+    display: none;
+  }
+
+  .employee-sidebar {
+    display: none;
+  }
+
+  .employee-main {
+    width: calc(100% - 30px);
+  }
+
+  .intelligence-status {
+    flex-direction: column;
+    gap: 7px;
+  }
+}

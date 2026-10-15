@@ -1,0 +1,679 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+}
+
+body {
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Arial,
+    sans-serif;
+  color: #10244d;
+  background: #f8fafc;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+/* =========================
+   LOGIN PAGE
+========================= */
+
+.login-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(
+      circle at 7% 20%,
+      rgba(224, 238, 255, 0.85),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 91% 58%,
+      rgba(248, 239, 255, 0.85),
+      transparent 31%
+    ),
+    #f8fafc;
+}
+
+/* =========================
+   HEADER
+========================= */
+
+.login-header {
+  height: 80px;
+  width: 100%;
+  padding: 0 36px 0 54px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  background: rgba(255, 255, 255, 0.96);
+  border-top: 1px solid #d7dce4;
+  border-bottom: 1px solid #dfe4eb;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.bosch-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bosch-logo-icon {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #70809a;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bosch-icon-inner {
+  width: 19px;
+  height: 19px;
+  border: 2px solid #70809a;
+  border-radius: 4px;
+  position: relative;
+}
+
+.bosch-icon-cross::before,
+.bosch-icon-cross::after {
+  content: "";
+  position: absolute;
+  background: #70809a;
+}
+
+.bosch-icon-cross::before {
+  width: 3px;
+  height: 23px;
+  left: 6px;
+  top: -4px;
+}
+
+.bosch-icon-cross::after {
+  height: 3px;
+  width: 23px;
+  top: 6px;
+  left: -4px;
+}
+
+.bosch-wordmark {
+  color: #e20015;
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: -1.2px;
+}
+
+.header-divider {
+  width: 1px;
+  height: 36px;
+  margin: 0 18px;
+  background: #d9dee7;
+}
+
+.platform-brand h1 {
+  color: #11244b;
+  font-size: 20px;
+  line-height: 1.15;
+  font-weight: 750;
+}
+
+.platform-brand p {
+  margin-top: 3px;
+  color: #607493;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.organization-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  padding: 9px 15px;
+
+  border: 1px solid #dce4ee;
+  border-radius: 22px;
+
+  background: #f4f7fb;
+
+  color: #50627d;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.organization-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #00ad82;
+}
+
+/* =========================
+   MAIN
+========================= */
+
+.login-main {
+  width: min(1310px, calc(100% - 80px));
+  margin: 0 auto;
+  padding: 45px 0 30px;
+
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(420px, 0.85fr);
+  gap: 62px;
+  align-items: center;
+}
+
+/* =========================
+   HERO
+========================= */
+
+.hero-section {
+  padding-top: 0;
+}
+
+.hero-badge {
+  width: fit-content;
+
+  display: flex;
+  align-items: center;
+  gap: 9px;
+
+  padding: 6px 14px;
+
+  border: 1px solid #b9d9ff;
+  border-radius: 20px;
+
+  background: #f1f8ff;
+
+  color: #1358df;
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.2px;
+}
+
+.hero-section h2 {
+  margin-top: 25px;
+
+  color: #102653;
+
+  font-size: clamp(48px, 4vw, 60px);
+  line-height: 1.12;
+  letter-spacing: -2.8px;
+  font-weight: 780;
+}
+
+.hero-description {
+  max-width: 735px;
+
+  margin-top: 23px;
+
+  color: #35577e;
+
+  font-size: 20px;
+  line-height: 1.62;
+  letter-spacing: 0.1px;
+}
+
+/* =========================
+   FEATURE CARDS
+========================= */
+
+.feature-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 17px;
+
+  margin-top: 42px;
+}
+
+.feature-card {
+  position: relative;
+  min-height: 238px;
+
+  padding: 22px;
+
+  border: 1px solid #dbe3ec;
+  border-radius: 17px;
+
+  background: rgba(255, 255, 255, 0.96);
+
+  box-shadow: 0 4px 11px rgba(31, 52, 77, 0.05);
+}
+
+.feature-icon {
+  width: 37px;
+  height: 37px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 9px;
+}
+
+.feature-icon.blue {
+  color: #1765f5;
+  background: #edf5ff;
+}
+
+.feature-icon.purple {
+  color: #514cff;
+  background: #f0efff;
+}
+
+.feature-icon.green {
+  color: #009b72;
+  background: #e9faf5;
+}
+
+.feature-card h4 {
+  margin-top: 17px;
+
+  color: #0d2145;
+
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.feature-card p {
+  max-width: 190px;
+
+  margin-top: 7px;
+
+  color: #607797;
+
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.feature-arrow {
+  position: absolute;
+  right: 20px;
+  bottom: 19px;
+
+  width: 27px;
+  height: 27px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+
+  color: #9aaec8;
+  background: #f6f8fb;
+
+  transform: rotate(45deg);
+}
+
+/* =========================
+   SIGN IN CARD
+========================= */
+
+.signin-card {
+  width: 100%;
+  max-width: 520px;
+
+  padding: 38px 36px 28px;
+
+  border: 1px solid #dce3ec;
+  border-radius: 18px;
+
+  background: #ffffff;
+
+  box-shadow:
+    0 18px 35px rgba(27, 48, 77, 0.12),
+    0 3px 8px rgba(27, 48, 77, 0.05);
+
+  justify-self: end;
+}
+
+.signin-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.signin-heading h3 {
+  color: #14284e;
+  font-size: 23px;
+  line-height: 1.2;
+  font-weight: 760;
+}
+
+.signin-heading p {
+  max-width: 320px;
+
+  margin-top: 8px;
+
+  color: #627695;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.signin-error {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid #f1c7c7;
+  border-radius: 8px;
+  background: #fff5f5;
+  color: #b42318;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.sso-badge {
+  flex-shrink: 0;
+
+  padding: 5px 10px;
+
+  border: 1px solid #dce4ee;
+  border-radius: 15px;
+
+  background: #f5f7fa;
+
+  color: #586a84;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.8px;
+}
+
+/* =========================
+   ROLE SWITCH
+========================= */
+
+.role-section {
+  margin-top: 31px;
+}
+
+.role-section label,
+.signin-field label {
+  display: block;
+
+  margin-bottom: 7px;
+
+  color: #34455f;
+
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.role-section label span,
+.signin-field label span {
+  color: #e10016;
+}
+
+.role-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+
+  padding: 4px;
+
+  border: 1px solid #dce4ee;
+  border-radius: 13px;
+
+  background: #f1f4f8;
+}
+
+.role-switch button {
+  height: 39px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+
+  border: none;
+  border-radius: 8px;
+
+  background: transparent;
+
+  color: #6c7e99;
+
+  font-size: 14px;
+  font-weight: 700;
+
+  cursor: pointer;
+}
+
+.role-switch button.active {
+  background: #ffffff;
+  color: #14284e;
+
+  box-shadow: 0 1px 4px rgba(23, 40, 68, 0.08);
+}
+
+.role-switch button.active svg {
+  color: #135eff;
+}
+
+/* =========================
+   FORM
+========================= */
+
+.signin-form {
+  margin-top: 25px;
+
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.signin-input {
+  height: 48px;
+
+  display: flex;
+  align-items: center;
+  gap: 11px;
+
+  padding: 0 14px;
+
+  border: 1px solid #d9e1eb;
+  border-radius: 11px;
+
+  background: #ffffff;
+
+  color: #91a5c1;
+}
+
+.signin-input:focus-within {
+  border-color: #3974e8;
+  box-shadow: 0 0 0 3px rgba(57, 116, 232, 0.09);
+}
+
+.signin-input input {
+  width: 100%;
+
+  border: none;
+  outline: none;
+
+  color: #263a5b;
+  background: transparent;
+
+  font-size: 14px;
+}
+
+.signin-input input::placeholder {
+  color: #9aacc5;
+}
+
+.signin-button {
+  width: 100%;
+  height: 50px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+
+  border: none;
+  border-radius: 12px;
+
+  background: #122d63;
+
+  color: #ffffff;
+
+  font-size: 15px;
+  font-weight: 750;
+
+  cursor: pointer;
+
+  box-shadow: 0 4px 8px rgba(18, 45, 99, 0.15);
+
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease;
+}
+
+.signin-button:hover {
+  background: #0d2452;
+}
+
+.signin-button:active {
+  transform: translateY(1px);
+}
+
+/* =========================
+   FOOTER
+========================= */
+
+.signin-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  margin-top: 26px;
+  padding-top: 19px;
+
+  border-top: 1px solid #e5e9ef;
+
+  color: #91a2bb;
+  font-size: 12px;
+}
+
+.tls-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  color: #617492;
+  font-weight: 600;
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+
+@media (max-width: 1100px) {
+  .login-main {
+    width: min(900px, calc(100% - 48px));
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+
+  .signin-card {
+    max-width: 600px;
+    justify-self: center;
+  }
+
+  .hero-section {
+    text-align: center;
+  }
+
+  .hero-badge {
+    margin: 0 auto;
+  }
+
+  .hero-description {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .feature-cards {
+    text-align: left;
+  }
+}
+
+@media (max-width: 700px) {
+  .login-header {
+    height: auto;
+    min-height: 76px;
+    padding: 16px 20px;
+  }
+
+  .organization-pill {
+    display: none;
+  }
+
+  .platform-brand p {
+    display: none;
+  }
+
+  .platform-brand h1 {
+    font-size: 17px;
+  }
+
+  .bosch-wordmark {
+    font-size: 21px;
+  }
+
+  .header-divider {
+    margin: 0 12px;
+  }
+
+  .login-main {
+    width: calc(100% - 30px);
+    padding: 30px 0;
+  }
+
+  .hero-section h2 {
+    font-size: 39px;
+    letter-spacing: -1.8px;
+  }
+
+  .hero-description {
+    font-size: 16px;
+  }
+
+  .feature-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .feature-card {
+    min-height: 190px;
+  }
+
+  .signin-card {
+    padding: 28px 22px 24px;
+  }
+
+  .signin-heading {
+    flex-direction: column;
+  }
+
+  .sso-badge {
+    align-self: flex-start;
+  }
+}
