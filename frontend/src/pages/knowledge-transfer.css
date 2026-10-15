@@ -15,70 +15,8 @@
   color: #11264d;
 }
 
-/* Header */
-
-.knowledge-transfer-header {
-  height: 63px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 27px;
-  background: #ffffff;
-  border-bottom: 1px solid #dfe5ed;
-}
-
 .knowledge-transfer-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.knowledge-transfer-logo {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  border: 2px solid #68758b;
-}
-
-.knowledge-transfer-symbol {
-  width: 21px;
-  height: 21px;
-  display: grid;
-  place-items: center;
-  border: 2px solid #68758b;
-  border-radius: 5px;
-  color: #68758b;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.knowledge-transfer-bosch {
-  color: #ed0712;
-  font-size: 27px;
-  font-weight: 800;
-  letter-spacing: -0.8px;
-}
-
-.knowledge-transfer-divider {
-  width: 1px;
-  height: 28px;
-  margin: 0 7px;
-  background: #d9e0e9;
-}
-
-.knowledge-transfer-brand h1 {
-  margin: 0;
-  color: #10244d;
-  font-size: 17px;
-  font-weight: 700;
-}
-
-.knowledge-transfer-brand p {
-  margin-top: 1px;
-  color: #647895;
-  font-size: 11px;
+  height: 100%;
 }
 
 .knowledge-transfer-profile {
@@ -104,7 +42,7 @@
 /* Layout */
 
 .knowledge-transfer-body {
-  min-height: calc(100vh - 63px);
+  min-height: calc(100vh - 80px);
   display: flex;
 }
 
@@ -428,15 +366,6 @@
 
 @media (max-width: 700px) {
   .knowledge-transfer-sidebar {
-    display: none;
-  }
-
-  .knowledge-transfer-header {
-    padding: 0 16px;
-  }
-
-  .knowledge-transfer-bosch,
-  .knowledge-transfer-divider {
     display: none;
   }
 

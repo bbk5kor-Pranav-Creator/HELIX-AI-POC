@@ -9,6 +9,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import EmployeeProfileMenu from '../components/common/EmployeeProfileMenu';
+import './employee.css';
 import './employee-dashboard-analytics.css';
 
 const metrics = [
@@ -51,29 +53,22 @@ function EmployeeDashboardAnalytics() {
 
   return (
     <div className="analytics-page">
-      <header className="analytics-header">
-        <div className="analytics-brand">
-          <div className="analytics-bosch-mark">
-            <div className="analytics-bosch-symbol">+</div>
-          </div>
+      <header className="login-header analytics-header">
+        <div className="header-brand analytics-brand">
+          <img src="/bosch-logo.png" alt="Bosch" className="bosch-logo-image" />
 
-          <span className="analytics-bosch-name">BOSCH</span>
+          <div className="header-divider analytics-header-divider" />
 
-          <div className="analytics-header-divider" />
-
-          <div>
+          <div className="platform-brand">
             <h1>Helix Agentic Platform</h1>
-            <p>Employee Workspace • Process Intelligence &amp; Handover</p>
+            <p>From operational realities to aligned SOPs, with AI</p>
           </div>
         </div>
 
-        <div className="analytics-profile">
-          <div className="analytics-avatar">PE</div>
-
-          <strong>Process Employee</strong>
-
-          <span className="analytics-profile-chevron">⌄</span>
-        </div>
+        <EmployeeProfileMenu
+          placement="header"
+          profileClassName="analytics-profile"
+        />
       </header>
 
       <div className="analytics-body">
@@ -97,21 +92,12 @@ function EmployeeDashboardAnalytics() {
             </button>
           </nav>
 
-          <div className="analytics-sidebar-bottom">
-            <div className="analytics-sidebar-user">
-              <div className="analytics-small-avatar">PE</div>
-
-              <div>
-                <strong>Process Employee</strong>
-                <span>Employee</span>
-              </div>
-            </div>
-
-            <button className="analytics-logout" type="button">
-              <span>↪</span>
-              Log Out
-            </button>
-          </div>
+          <EmployeeProfileMenu
+            placement="sidebar"
+            wrapperClassName="analytics-sidebar-bottom"
+            profileClassName="analytics-sidebar-user"
+            logoutClassName="analytics-logout"
+          />
         </aside>
 
         <main className="analytics-main">

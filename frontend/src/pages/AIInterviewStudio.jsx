@@ -3,12 +3,15 @@ import {
   ArrowRight,
   CheckCircle2,
   FileText,
+  Grid2X2,
   MessageSquare,
   Send,
   Sparkles,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import EmployeeProfileMenu from '../components/common/EmployeeProfileMenu';
+import './employee.css';
 import './ai-interview-studio.css';
 
 function AIInterviewStudio() {
@@ -21,23 +24,53 @@ function AIInterviewStudio() {
   };
 
   return (
-    <div className="interview-page">
-      <header className="interview-header">
-        <div className="interview-brand">
-          <div className="interview-logo">H</div>
-
-          <div>
-            <strong>Helix Agentic Platform</strong>
-            <span>
-              Employee Workspace • Process Intelligence &amp; Handover
-            </span>
+    <div className="employee-app interview-page">
+      <header className="login-header employee-topbar">
+        <div className="header-brand topbar-brand">
+          <img src="/bosch-logo.png" alt="Bosch" className="bosch-logo-image" />
+          <div className="header-divider topbar-divider" />
+          <div className="platform-brand">
+            <h1>Helix Agentic Platform</h1>
+            <p>From operational realities to aligned SOPs, with AI</p>
           </div>
         </div>
 
-        <div className="interview-user">PE</div>
+        <EmployeeProfileMenu
+          placement="header"
+          profileClassName="employee-profile"
+        />
       </header>
 
-      <main className="interview-content">
+      <div className="employee-body">
+        <aside className="employee-sidebar">
+          <nav>
+            <button
+              className="sidebar-item active"
+              type="button"
+              onClick={() => navigate('/employee')}
+            >
+              <Sparkles size={17} />
+              Studio
+            </button>
+
+            <button
+              className="sidebar-item"
+              type="button"
+              onClick={() => navigate('/employee/dashboard')}
+            >
+              <Grid2X2 size={17} />
+              Dashboard
+            </button>
+          </nav>
+
+          <EmployeeProfileMenu
+            placement="sidebar"
+            wrapperClassName="sidebar-bottom"
+            profileClassName="sidebar-user"
+          />
+        </aside>
+
+        <main className="employee-main interview-content">
         <button
           className="interview-back-button"
           type="button"
@@ -229,7 +262,8 @@ function AIInterviewStudio() {
             </div>
           </section>
         )}
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

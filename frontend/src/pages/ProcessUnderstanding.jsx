@@ -2,11 +2,14 @@ import {
   ArrowLeft,
   ArrowRight,
   ChevronDown,
+  Grid2X2,
   Network,
   Sparkles,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import EmployeeProfileMenu from '../components/common/EmployeeProfileMenu';
+import './employee.css';
 import './process-understanding.css';
 
 const processChains = ['S2C', 'I2P-IP', 'R2B', 'PPM', 'M2S'];
@@ -36,42 +39,75 @@ function ProcessUnderstanding() {
   const canGainKnowledge = processChain !== '' && role !== '';
 
   return (
-    <div className="process-page">
-      <header className="process-header">
-        <div className="process-brand">
-          <div className="process-logo">H</div>
-
-          <div>
-            <strong>Helix Agentic Platform</strong>
-            <span>
-              Employee Workspace • Process Intelligence &amp; Handover
-            </span>
+    <div className="employee-app process-page">
+      <header className="login-header employee-topbar">
+        <div className="header-brand topbar-brand">
+          <img src="/bosch-logo.png" alt="Bosch" className="bosch-logo-image" />
+          <div className="header-divider topbar-divider" />
+          <div className="platform-brand">
+            <h1>Helix Agentic Platform</h1>
+            <p>From operational realities to aligned SOPs, with AI</p>
           </div>
         </div>
 
-        <div className="process-user">PE</div>
+        <EmployeeProfileMenu
+          placement="header"
+          profileClassName="employee-profile"
+        />
       </header>
 
-      <main className="process-content">
-        <button className="back-button" type="button"
-        onClick={() => navigate('/employee')}>
-          <ArrowLeft size={16} />
-          Back to Studio
-        </button>
+      <div className="employee-body">
+        <aside className="employee-sidebar">
+          <nav>
+            <button
+              className="sidebar-item active"
+              type="button"
+              onClick={() => navigate('/employee')}
+            >
+              <Sparkles size={17} />
+              Studio
+            </button>
 
-        <div className="process-heading">
-          <div className="process-eyebrow">
-            <Sparkles size={15} />
-            PROCESS UNDERSTANDING
+            <button
+              className="sidebar-item"
+              type="button"
+              onClick={() => navigate('/employee/dashboard')}
+            >
+              <Grid2X2 size={17} />
+              Dashboard
+            </button>
+          </nav>
+
+          <EmployeeProfileMenu
+            placement="sidebar"
+            wrapperClassName="sidebar-bottom"
+            profileClassName="sidebar-user"
+          />
+        </aside>
+
+        <main className="employee-main process-content">
+          <button
+            className="back-button"
+            type="button"
+            onClick={() => navigate('/employee')}
+          >
+            <ArrowLeft size={16} />
+            Back to Studio
+          </button>
+
+          <div className="process-heading">
+            <div className="process-eyebrow">
+              <Sparkles size={15} />
+              PROCESS UNDERSTANDING
+            </div>
+
+            <h1>Gain Process Knowledge</h1>
+
+            <p>
+              Select a process chain and role to gain a role-specific
+              understanding of the relevant business process.
+            </p>
           </div>
-
-          <h1>Gain Process Knowledge</h1>
-
-          <p>
-            Select a process chain and role to gain a role-specific
-            understanding of the relevant business process.
-          </p>
-        </div>
 
         <section className="selection-card">
           <div className="selection-field">
@@ -151,7 +187,8 @@ function ProcessUnderstanding() {
             Select a Process Chain and Role to continue.
           </div>
         )}
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

@@ -8,44 +8,11 @@
 }
 
 .employee-topbar {
-  height: 68px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 28px;
-  background: #fff;
-  border-bottom: 1px solid #dfe5ed;
-}
-
-.topbar-brand {
-  display: flex;
-  align-items: center;
-}
-
-.bosch-logo-image {
-  display: block;
-  width: 90px;
-  height: 44px;
-  object-fit: contain;
   flex-shrink: 0;
 }
 
-.topbar-divider {
-  width: 1px;
-  height: 34px;
-  margin: 0 17px;
-  background: #dce2ea;
-}
-
-.topbar-brand h1 {
-  font-size: 18px;
-  line-height: 1.2;
-}
-
-.topbar-brand p {
-  margin-top: 3px;
-  color: #607493;
-  font-size: 13px;
+.topbar-brand {
+  height: 100%;
 }
 
 .employee-profile {
@@ -54,6 +21,114 @@
   gap: 9px;
   color: #25344c;
   font-size: 13px;
+}
+
+.employee-profile-menu {
+  position: relative;
+}
+
+.employee-profile-menu--header {
+  flex-shrink: 0;
+}
+
+.employee-account-trigger {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.employee-profile-menu--header .employee-account-trigger {
+  width: auto;
+  min-height: 38px;
+}
+
+.employee-profile-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0 !important;
+  color: inherit !important;
+  font-size: inherit !important;
+  line-height: normal;
+}
+
+.employee-account-menu {
+  position: absolute;
+  z-index: 20;
+  width: 250px;
+  padding: 14px;
+  border: 1px solid #dce4ee;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(20, 42, 78, 0.16);
+  color: #25344c;
+  font-size: 13px;
+}
+
+.employee-account-menu--header {
+  top: calc(100% + 8px);
+  right: 0;
+}
+
+.employee-account-menu--sidebar {
+  bottom: calc(100% + 8px);
+  left: 0;
+}
+
+.employee-account-name,
+.employee-account-role {
+  display: block;
+}
+
+.employee-account-name {
+  font-size: 14px;
+}
+
+.employee-account-role {
+  margin-top: 3px;
+  color: #718198;
+  font-size: 12px;
+}
+
+.employee-account-information {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #edf0f4;
+}
+
+.employee-account-information > span {
+  color: #718198;
+  font-size: 11px;
+}
+
+.employee-account-information > strong {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.employee-account-menu .employee-account-logout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px 0 0;
+  border: 0;
+  border-top: 1px solid #edf0f4;
+  background: transparent;
+  color: #e20015;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .profile-avatar,
@@ -74,7 +149,7 @@
 
 .employee-body {
   display: flex;
-  min-height: calc(100vh - 68px);
+  min-height: calc(100vh - 80px);
 }
 
 .employee-sidebar {
@@ -121,6 +196,7 @@
   align-items: center;
   gap: 10px;
   padding: 0 8px 13px;
+  min-height: 47px;
 }
 
 .small-avatar {
@@ -350,10 +426,6 @@
 }
 
 @media (max-width: 700px) {
-  .employee-topbar {
-    padding: 0 16px;
-  }
-
   .topbar-brand p,
   .employee-profile strong {
     display: none;

@@ -6,68 +6,8 @@
   color: #11264d;
 }
 
-/* Header */
-
-.process-header {
-  height: 68px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 30px;
-  background: #ffffff;
-  border-bottom: 1px solid #dfe5ed;
-}
-
-.process-brand {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-}
-
-.process-logo {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  background: #122d63;
-  color: #ffffff;
-  font-weight: 800;
-}
-
-.process-brand strong,
-.process-brand span {
-  display: block;
-}
-
-.process-brand strong {
-  font-size: 17px;
-}
-
-.process-brand span {
-  margin-top: 3px;
-  color: #647895;
-  font-size: 11px;
-}
-
-.process-user {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  border: 1px solid #c9ddfb;
-  border-radius: 50%;
-  background: #eaf3ff;
-  color: #1261e9;
-  font-size: 11px;
-}
-
-/* Main content */
-
 .process-content {
-  width: min(1050px, calc(100% - 50px));
-  margin: auto;
-  padding: 30px 0 50px;
+  padding: 29px 0 50px;
 }
 
 .back-button {
@@ -273,10 +213,6 @@
 @media (max-width: 800px) {
   .selection-card {
     grid-template-columns: 1fr;
-  }
-
-  .process-content {
-    width: calc(100% - 30px);
   }
 
   .process-overview {

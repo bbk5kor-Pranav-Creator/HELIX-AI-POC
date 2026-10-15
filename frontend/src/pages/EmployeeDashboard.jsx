@@ -1,14 +1,13 @@
 import {
   ArrowLeftRight,
   ArrowUpRight,
-  ChevronDown,
   Grid2X2,
-  LogOut,
   MessageSquare,
   Network,
   Sparkles,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import EmployeeProfileMenu from '../components/common/EmployeeProfileMenu';
 import './employee.css';
 
 const studioCards = [
@@ -60,27 +59,22 @@ function EmployeeDashboard() {
 
   return (
     <div className="employee-app">
-      <header className="employee-topbar">
-        <div className="topbar-brand">
-           <img src="/bosch-logo.png" alt="Bosch" className="bosch-logo-image" /> 
+      <header className="login-header employee-topbar">
+        <div className="header-brand topbar-brand">
+          <img src="/bosch-logo.png" alt="Bosch" className="bosch-logo-image" />
 
-          <div className="topbar-divider" />
+          <div className="header-divider topbar-divider" />
 
-          <div>
+          <div className="platform-brand">
             <h1>Helix Agentic Platform</h1>
-            <p>Employee Workspace • Process Intelligence &amp; Handover</p>
+            <p>From operational realities to aligned SOPs, with AI</p>
           </div>
         </div>
 
-        <div className="employee-profile">
-          <div className="profile-avatar">PE</div>
-
-          <div>
-            <strong>Process Employee</strong>
-          </div>
-
-          <ChevronDown size={15} />
-        </div>
+        <EmployeeProfileMenu
+          placement="header"
+          profileClassName="employee-profile"
+        />
       </header>
 
       <div className="employee-body">
@@ -99,21 +93,11 @@ function EmployeeDashboard() {
             </button>
           </nav>
 
-          <div className="sidebar-bottom">
-            <div className="sidebar-user">
-              <div className="small-avatar">PE</div>
-
-              <div>
-                <strong>Process Employee</strong>
-                <span>Employee</span>
-              </div>
-            </div>
-
-            <button className="logout-button" type="button">
-              <LogOut size={16} />
-              Log Out
-            </button>
-          </div>
+          <EmployeeProfileMenu
+            placement="sidebar"
+            wrapperClassName="sidebar-bottom"
+            profileClassName="sidebar-user"
+          />
         </aside>
 
         <main className="employee-main">

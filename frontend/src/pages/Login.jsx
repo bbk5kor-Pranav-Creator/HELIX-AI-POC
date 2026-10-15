@@ -12,6 +12,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { saveEmployeeSession } from '../utils/auth';
 
 function Login() {
   const navigate = useNavigate();
@@ -54,6 +55,7 @@ function Login() {
       }
 
       if (data.role === 'Employee') {
+        saveEmployeeSession({ email: email.trim(), role: data.role });
         navigate('/employee');
         return;
       }
@@ -78,15 +80,7 @@ function Login() {
       {/* Header */}
       <header className="login-header">
         <div className="header-brand">
-          <div className="bosch-logo">
-            <div className="bosch-logo-icon">
-              <div className="bosch-icon-inner">
-                <div className="bosch-icon-cross"></div>
-              </div>
-            </div>
-
-            <span className="bosch-wordmark">BOSCH</span>
-          </div>
+          <img src="/bosch-logo.png" alt="Bosch" className="bosch-logo-image" />
 
           <div className="header-divider"></div>
 

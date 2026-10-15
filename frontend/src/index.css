@@ -28,6 +28,14 @@ input {
   font: inherit;
 }
 
+.bosch-logo-image {
+  display: block;
+  width: 90px;
+  height: 44px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 /* =========================
    LOGIN PAGE
 ========================= */
@@ -70,58 +78,6 @@ input {
   display: flex;
   align-items: center;
   height: 100%;
-}
-
-.bosch-logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.bosch-logo-icon {
-  width: 36px;
-  height: 36px;
-  border: 3px solid #70809a;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.bosch-icon-inner {
-  width: 19px;
-  height: 19px;
-  border: 2px solid #70809a;
-  border-radius: 4px;
-  position: relative;
-}
-
-.bosch-icon-cross::before,
-.bosch-icon-cross::after {
-  content: "";
-  position: absolute;
-  background: #70809a;
-}
-
-.bosch-icon-cross::before {
-  width: 3px;
-  height: 23px;
-  left: 6px;
-  top: -4px;
-}
-
-.bosch-icon-cross::after {
-  height: 3px;
-  width: 23px;
-  top: 6px;
-  left: -4px;
-}
-
-.bosch-wordmark {
-  color: #e20015;
-  font-size: 25px;
-  font-weight: 800;
-  letter-spacing: -1.2px;
 }
 
 .header-divider {
@@ -627,16 +583,18 @@ input {
     display: none;
   }
 
+  .login-header .employee-profile,
+  .login-header .analytics-profile,
+  .login-header .knowledge-transfer-profile {
+    display: none;
+  }
+
   .platform-brand p {
     display: none;
   }
 
   .platform-brand h1 {
     font-size: 17px;
-  }
-
-  .bosch-wordmark {
-    font-size: 21px;
   }
 
   .header-divider {

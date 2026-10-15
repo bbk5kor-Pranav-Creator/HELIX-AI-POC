@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import EmployeeProfileMenu from '../components/common/EmployeeProfileMenu';
+import './employee.css';
 import './knowledge-transfer.css';
 
 const handoverScenarios = [
@@ -39,29 +41,22 @@ function KnowledgeTransfer() {
 
   return (
     <div className="knowledge-transfer-page">
-      <header className="knowledge-transfer-header">
-        <div className="knowledge-transfer-brand">
-          <div className="knowledge-transfer-logo">
-            <div className="knowledge-transfer-symbol">+</div>
-          </div>
+      <header className="login-header knowledge-transfer-header">
+        <div className="header-brand knowledge-transfer-brand">
+          <img src="/bosch-logo.png" alt="Bosch" className="bosch-logo-image" />
 
-          <span className="knowledge-transfer-bosch">BOSCH</span>
+          <div className="header-divider knowledge-transfer-divider" />
 
-          <div className="knowledge-transfer-divider" />
-
-          <div>
+          <div className="platform-brand">
             <h1>Helix Agentic Platform</h1>
-            <p>Employee Workspace • Process Intelligence &amp; Handover</p>
+            <p>From operational realities to aligned SOPs, with AI</p>
           </div>
         </div>
 
-        <div className="knowledge-transfer-profile">
-          <div className="knowledge-transfer-avatar">PE</div>
-
-          <strong>Process Employee</strong>
-
-          <ChevronDown size={15} />
-        </div>
+        <EmployeeProfileMenu
+          placement="header"
+          profileClassName="knowledge-transfer-profile"
+        />
       </header>
 
       <div className="knowledge-transfer-body">
@@ -89,21 +84,12 @@ function KnowledgeTransfer() {
             </button>
           </nav>
 
-          <div className="knowledge-sidebar-bottom">
-            <div className="knowledge-sidebar-user">
-              <div className="knowledge-small-avatar">PE</div>
-
-              <div>
-                <strong>Process Employee</strong>
-                <span>Employee</span>
-              </div>
-            </div>
-
-            <button className="knowledge-logout" type="button">
-              <span>↪</span>
-              Log Out
-            </button>
-          </div>
+          <EmployeeProfileMenu
+            placement="sidebar"
+            wrapperClassName="knowledge-sidebar-bottom"
+            profileClassName="knowledge-sidebar-user"
+            logoutClassName="knowledge-logout"
+          />
         </aside>
 
         <main className="knowledge-transfer-main">
