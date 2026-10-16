@@ -1,4 +1,5 @@
-# Secrets
+
+# Environment variables and secrets
 .env
 .env.*
 !.env.example
@@ -11,8 +12,9 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+env/
 
-# Node
+# Node.js
 node_modules/
 dist/
 
@@ -21,6 +23,9 @@ dist/
 *.sqlite
 *.sqlite3
 
-# IDE
+# IDE and operating system files
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db
+backend/.venv/

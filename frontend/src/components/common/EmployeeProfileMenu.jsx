@@ -1,9 +1,14 @@
+
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { clearEmployeeSession, getEmployeeSession } from '../../utils/auth';
+import {
+  clearEmployeeSession,
+  getEmployeeSession,
+} from '../../utils/auth';
 
 function EmployeeProfileMenu({
+  role = 'Employee',
   placement = 'header',
   wrapperClassName = '',
   profileClassName = '',
@@ -25,6 +30,7 @@ function EmployeeProfileMenu({
         setIsOpen(false);
       }
     };
+
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
         setIsOpen(false);
@@ -42,17 +48,24 @@ function EmployeeProfileMenu({
   }, [isOpen]);
 
   const logout = () => {
-    clearEmployeeSession();
+    if (role === 'Employee') {
+      clearEmployeeSession();
+    }
+
+    setIsOpen(false);
     navigate('/login', { replace: true });
   };
 
   const profileContent = (
     <>
       <span className="employee-profile-label">
-        <strong>Employee</strong>
-        {placement === 'sidebar' && <span>Employee</span>}
+        <strong>{role}</strong>
+        {placement === 'sidebar' && <span>{role}</span>}
       </span>
-      {placement === 'header' && <ChevronDown size={15} aria-hidden="true" />}
+
+      {placement === 'header' && (
+        <ChevronDown size={15} aria-hidden="true" />
+      )}
     </>
   );
 
@@ -61,12 +74,18 @@ function EmployeeProfileMenu({
       className={`employee-account-menu employee-account-menu--${placement}`}
       role="menu"
     >
-      <strong className="employee-account-name">Employee</strong>
-      <span className="employee-account-role">Employee</span>
+      <strong className="employee-account-name">{role}</strong>
+      <span className="employee-account-role">{role}</span>
+
       <div className="employee-account-information">
         <span>Account</span>
-        <strong>{session?.email}</strong>
+        <strong>
+          {role === 'Employee'
+            ? session?.email || 'No account information'
+            : session?.email || 'Admin preview'}
+        </strong>
       </div>
+
       <button
         className="employee-account-logout"
         type="button"
@@ -95,7 +114,9 @@ function EmployeeProfileMenu({
         >
           {profileContent}
         </button>
+
         {menu}
+
         <button
           className={`employee-account-logout ${logoutClassName}`}
           type="button"
@@ -111,7 +132,7 @@ function EmployeeProfileMenu({
   return (
     <div
       ref={containerRef}
-      className="employee-profile-menu employee-profile-menu--header"
+      className={`employee-profile-menu employee-profile-menu--header ${wrapperClassName}`}
     >
       <button
         ref={triggerRef}
@@ -123,6 +144,7 @@ function EmployeeProfileMenu({
       >
         {profileContent}
       </button>
+
       {menu}
     </div>
   );
