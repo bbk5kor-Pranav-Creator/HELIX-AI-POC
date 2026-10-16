@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import EmployeeProfileMenu from '../components/common/EmployeeProfileMenu';
+import { getWorkspaceSession } from '../utils/auth';
 import './admin-dashboard.css';
 
 const SOURCE_CATEGORIES = [
@@ -163,11 +164,27 @@ const isValidHttpUrl = (value) => {
   }
 };
 
+const savedSourceRecord = (source) => ({
+  id: source.id,
+  type: source.source_type,
+  categoryName: 'Paste Text',
+  categoryLabel: 'TEXT INPUT',
+  title: source.title,
+  value: `${source.char_count} characters stored`,
+  notes: source.notes,
+  files: [],
+  createdAt: source.created_at,
+  status: 'Saved',
+});
+
 function AdminDashboard() {
   const [activeView, setActiveView] = useState('overview');
   const [selectedSource, setSelectedSource] = useState(null);
   const [sourceTitle, setSourceTitle] = useState('');
   const [sourceValue, setSourceValue] = useState('');
+  const [isSubmittingSource, setIsSubmittingSource] = useState(false);
+  const [isLoadingSources, setIsLoadingSources] = useState(false);
+  const [sourceLoadError, setSourceLoadError] = useState('');
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [docupediaMode, setDocupediaMode] = useState('upload');
   const [outlookMode, setOutlookMode] = useState('upload');
@@ -178,6 +195,13 @@ function AdminDashboard() {
   const [repositorySearch, setRepositorySearch] = useState('');
   const [repositoryFilter, setRepositoryFilter] = useState('all');
   const [sources, setSources] = useState([]);
+  const [isLoadingSource, setIsLoadingSource] = useState(false);
+  const [sourceDetailsError, setSourceDetailsError] = useState(false);
+  const [lastSavedSourceId, setLastSavedSourceId] = useState(null);
+  const [deletingSourceId, setDeletingSourceId] = useState(null);
+  const [repositoryNotice, setRepositoryNotice] = useState('');
+  const [repositoryNoticeType, setRepositoryNoticeType] = useState('success');
+  const mutationInProgress = useRef(false);
 
   const totalSourcesCount = sources.length;
 
@@ -203,15 +227,124 @@ function AdminDashboard() {
     if (!selectedSource) return undefined;
 
     const handleKeyDown = (event) => {
-      if (event.key === 'Escape') setSelectedSource(null);
+      if (event.key === 'Escape' && !mutationInProgress.current) {
+        setSelectedSource(null);
+      }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [selectedSource]);
 
-  const openSource = (source) => {
-    setSelectedSource(source);
+  useEffect(() => {
+    let isCurrent = true;
+
+    const loadSavedSources = async () => {
+      const session = getWorkspaceSession();
+      if (!session?.accessToken || session.role !== 'Admin') {
+        setSourceLoadError('Sign in as an Admin to view saved knowledge sources.');
+        return;
+      }
+
+      setIsLoadingSources(true);
+      try {
+        const response = await fetch('/api/knowledge/sources', {
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || 'Unable to load saved sources.');
+        }
+
+        if (isCurrent) {
+          const savedSources = data.sources.map(savedSourceRecord);
+          setSources((current) => {
+            const sourcesById = new Map(
+              savedSources.map((source) => [source.id, source])
+            );
+            current
+              .filter((source) => source.status === 'Saved')
+              .forEach((source) => {
+                if (!sourcesById.has(source.id)) {
+                  sourcesById.set(source.id, source);
+                }
+              });
+            const savedRecords = [...sourcesById.values()].sort(
+              (first, second) =>
+                new Date(second.createdAt).getTime() -
+                new Date(first.createdAt).getTime()
+            );
+            return [
+              ...savedRecords,
+              ...current.filter((source) => source.status !== 'Saved'),
+            ];
+          });
+          setSourceLoadError('');
+        }
+      } catch (error) {
+        if (isCurrent) {
+          setSourceLoadError(error.message || 'Unable to load saved sources.');
+        }
+      } finally {
+        if (isCurrent) setIsLoadingSources(false);
+      }
+    };
+
+    loadSavedSources();
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const sourceId = selectedSource?.sourceId;
+    if (!sourceId) return undefined;
+    const controller = new AbortController();
+
+    const loadSource = async () => {
+      try {
+        const session = getWorkspaceSession();
+        if (!session?.accessToken || session.role !== 'Admin') {
+          throw new Error('Sign in as an Admin to edit saved knowledge sources.');
+        }
+        const response = await fetch(`/api/knowledge/sources/${sourceId}`, {
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+          signal: controller.signal,
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || 'Unable to load the saved source.');
+        }
+        if (!controller.signal.aborted) {
+          setSourceTitle(data.source.title);
+          setSourceValue(data.source.original_text);
+          setSourceNotes(data.source.notes);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setNotice(error.message || 'Unable to load the saved source.');
+          setNoticeType('error');
+          setSourceDetailsError(true);
+        }
+      } finally {
+        if (!controller.signal.aborted) setIsLoadingSource(false);
+      }
+    };
+
+    loadSource();
+    return () => controller.abort();
+  }, [selectedSource?.sourceId]);
+
+  const openSource = (source, sourceId) => {
+    if (isSubmittingSource || deletingSourceId) return;
+    const savedId = source.id === 'paste-text'
+      ? sourceId === undefined
+        ? lastSavedSourceId || sources.find((item) => item.status === 'Saved')?.id
+        : sourceId
+      : null;
+    setSelectedSource({ ...source, sourceId: savedId || null });
+    setIsLoadingSource(Boolean(savedId));
+    setSourceDetailsError(false);
     setSourceTitle('');
     setSourceValue('');
     setSelectedFiles([]);
@@ -224,6 +357,7 @@ function AdminDashboard() {
   };
 
   const closeSource = () => {
+    if (mutationInProgress.current) return;
     setSelectedSource(null);
     setSourceTitle('');
     setSourceValue('');
@@ -246,9 +380,49 @@ function AdminDashboard() {
     setSources((currentSources) => currentSources.filter((source) => source.id !== sourceId));
   };
 
-  const handleSourceSubmit = (event) => {
+  const deleteSavedSource = async (source) => {
+    if (mutationInProgress.current || isLoadingSources) return;
+    if (!window.confirm(`Permanently delete "${source.title}" and all its searchable text chunks?`)) {
+      return;
+    }
+    mutationInProgress.current = true;
+    setDeletingSourceId(source.id);
+    setRepositoryNotice('');
+    try {
+      const session = getWorkspaceSession();
+      if (!session?.accessToken || session.role !== 'Admin') {
+        throw new Error('Sign in as an Admin to delete knowledge sources.');
+      }
+      const response = await fetch(`/api/knowledge/sources/${source.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || 'Unable to delete the source.');
+      }
+      removeSource(source.id);
+      if (lastSavedSourceId === source.id) setLastSavedSourceId(null);
+      setRepositoryNotice('Source and its searchable text chunks permanently deleted.');
+      setRepositoryNoticeType('success');
+    } catch (error) {
+      setRepositoryNotice(error.message || 'Unable to delete the source.');
+      setRepositoryNoticeType('error');
+    } finally {
+      mutationInProgress.current = false;
+      setDeletingSourceId(null);
+    }
+  };
+
+  const handleSourceSubmit = async (event) => {
     event.preventDefault();
-    if (!selectedSource) return;
+    if (
+      !selectedSource ||
+      mutationInProgress.current ||
+      isLoadingSource ||
+      sourceDetailsError ||
+      (selectedSource.id === 'paste-text' && isLoadingSources)
+    ) return;
 
     const trimmedValue = sourceValue.trim();
     const isDocupedia = selectedSource.id === 'docupedia';
@@ -289,6 +463,60 @@ function AdminDashboard() {
     if (oversizedFile) {
       setNotice(`${oversizedFile.name} exceeds the 50 MB per-file limit.`);
       setNoticeType('error');
+      return;
+    }
+
+    if (selectedSource.id === 'paste-text') {
+      const session = getWorkspaceSession();
+      if (!session?.accessToken || session.role !== 'Admin') {
+        setNotice('Your Admin session is missing or expired. Please sign in again.');
+        setNoticeType('error');
+        return;
+      }
+
+      mutationInProgress.current = true;
+      setIsSubmittingSource(true);
+      setNotice('');
+      try {
+        const sourceId = selectedSource.sourceId;
+        const response = await fetch(
+          sourceId ? `/api/knowledge/sources/${sourceId}` : '/api/knowledge/text', {
+          method: sourceId ? 'PUT' : 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.accessToken}`,
+          },
+          body: JSON.stringify({
+            title: sourceTitle.trim() || undefined,
+            text: sourceValue,
+            notes: sourceNotes,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || 'Unable to save the text source.');
+        }
+
+        const source = data.source;
+        const savedRecord = savedSourceRecord(source);
+        setSources((current) => [
+          savedRecord,
+          ...current.filter((item) => item.id !== source.id),
+        ]);
+        setLastSavedSourceId(source.id);
+        setSourceTitle(source.title);
+        if (!sourceId) setIsLoadingSource(true);
+        setSelectedSource((current) => ({ ...current, sourceId: source.id }));
+        setSourceLoadError('');
+        setNotice('Text source saved and is available to Employee interviews.');
+        setNoticeType('success');
+      } catch (error) {
+        setNotice(error.message || 'Unable to save the text source.');
+        setNoticeType('error');
+      } finally {
+        mutationInProgress.current = false;
+        setIsSubmittingSource(false);
+      }
       return;
     }
 
@@ -400,6 +628,7 @@ function AdminDashboard() {
                 type="button"
                 className="admin-source-card"
                 key={source.id}
+                disabled={source.id === 'paste-text' && isLoadingSources}
                 onClick={() => openSource(source)}
               >
                 <div className="admin-source-card-top">
@@ -423,8 +652,8 @@ function AdminDashboard() {
           <div>
             <strong>No source records yet</strong>
             <p>
-              Choose one of the ten channels above to prepare a source record.
-              Records created here are session-only previews until backend ingestion is connected.
+              Paste Text sources are saved to the backend. Other channels remain
+              session-only previews.
             </p>
           </div>
         </section>
@@ -433,7 +662,7 @@ function AdminDashboard() {
           <div className="admin-recent-heading">
             <div>
               <h3>Recent Source Records ({totalSourcesCount})</h3>
-              <p>Preview records created during this session.</p>
+              <p>Saved Paste Text sources and other session previews.</p>
             </div>
             <button type="button" className="admin-text-button" onClick={() => openView('repository')}>
               View repository <ArrowUpRight size={15} />
@@ -450,7 +679,9 @@ function AdminDashboard() {
                     <strong>{source.title}</strong>
                     <span>{source.categoryName} · {formatDate(source.createdAt)}</span>
                   </div>
-                  <span className="admin-preview-status">Preview</span>
+                  <span className="admin-preview-status">
+                    {source.status === 'Saved' ? 'Saved' : 'Preview'}
+                  </span>
                 </article>
               );
             })}
@@ -466,12 +697,26 @@ function AdminDashboard() {
       <div className="admin-subview-title-row">
         <div>
           <h2>Repository</h2>
-          <p>Review source records prepared during this session. These entries are not yet uploaded to a backend.</p>
+          <p>Review saved Paste Text sources and session-only previews from other channels.</p>
+          <button
+            type="button"
+            className="admin-text-button"
+            disabled={isLoadingSources || Boolean(deletingSourceId)}
+            onClick={() => openSource(SOURCE_CATEGORIES.find((source) => source.id === 'paste-text'), null)}
+          >
+            Add New Source
+          </button>
         </div>
         <button type="button" className="admin-primary-button" onClick={() => openView('overview')}>
           <ArrowLeft size={16} /> Source Ingestion
         </button>
       </div>
+
+      {repositoryNotice && (
+        <div className={`admin-source-notice ${repositoryNoticeType}`} role={repositoryNoticeType === 'error' ? 'alert' : 'status'}>
+          <span>{repositoryNotice}</span>
+        </div>
+      )}
 
       <div className="admin-repository-toolbar">
         <label className="admin-repository-search">
@@ -497,7 +742,7 @@ function AdminDashboard() {
 
       <div className="admin-repository-summary">
         <strong>{filteredSources.length} {filteredSources.length === 1 ? 'record' : 'records'}</strong>
-        <span>of {totalSourcesCount} session {totalSourcesCount === 1 ? 'record' : 'records'}</span>
+        <span>of {totalSourcesCount} total {totalSourcesCount === 1 ? 'record' : 'records'}</span>
       </div>
 
       {filteredSources.length === 0 ? (
@@ -528,7 +773,9 @@ function AdminDashboard() {
                 <div className="admin-repository-item-main">
                   <div className="admin-repository-item-title-row">
                     <strong>{source.title}</strong>
-                    <span className="admin-preview-status">Session preview</span>
+                    <span className="admin-preview-status">
+                      {source.status === 'Saved' ? 'Saved' : 'Session preview'}
+                    </span>
                   </div>
                   <span className="admin-repository-category">{source.categoryName} · {source.categoryLabel}{source.inputMode ? ` · ${source.inputMode === 'upload' ? 'File upload mode' : source.inputMode === 'url' ? 'URL mode' : 'Reference details mode'}` : ''}</span>
                   {source.value && <p className="admin-repository-value">{source.value}</p>}
@@ -542,22 +789,46 @@ function AdminDashboard() {
                   {source.notes && <p className="admin-repository-notes">Notes: {source.notes}</p>}
                   <span className="admin-repository-date">Added {formatDate(source.createdAt)}</span>
                 </div>
-                <button
-                  type="button"
-                  className="admin-remove-source"
-                  onClick={() => removeSource(source.id)}
-                  aria-label={`Remove ${source.title} preview record`}
-                  title="Remove preview record"
-                >
-                  <Trash2 size={16} />
-                </button>
+                {source.status === 'Saved' ? (
+                  <>
+                    <button
+                      type="button"
+                      className="admin-text-button"
+                      disabled={isLoadingSources || Boolean(deletingSourceId)}
+                      onClick={() => openSource(category, source.id)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-remove-source admin-delete-source"
+                      disabled={isLoadingSources || Boolean(deletingSourceId)}
+                      onClick={() => deleteSavedSource(source)}
+                      aria-label={`Delete ${source.title}`}
+                      title="Permanently delete source"
+                    >
+                      <Trash2 size={16} />
+                      {deletingSourceId === source.id ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="admin-remove-source"
+                    onClick={() => removeSource(source.id)}
+                    aria-label={`Remove ${source.title} preview record`}
+                    title="Remove preview record"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
               </article>
             );
           })}
         </div>
       )}
       <p className="admin-repository-disclaimer">
-        Preview mode: records are held in React state only and will be cleared when this page is refreshed.
+        Paste Text sources are stored persistently. Other channel entries are session-only previews and clear when this page is refreshed.
       </p>
     </section>
   );
@@ -685,6 +956,13 @@ function AdminDashboard() {
         </aside>
 
         <main className="employee-main admin-main">
+          {sourceLoadError && (
+            <div className="admin-source-notice error" role="alert">
+              <X size={17} />
+              <span>{sourceLoadError}</span>
+            </div>
+          )}
+          {isLoadingSources && <p role="status">Loading saved knowledge sources...</p>}
           {activeView === 'overview' && renderOverview()}
           {activeView === 'repository' && renderRepository()}
           {activeView === 'analytics' && renderAnalytics()}
@@ -723,6 +1001,7 @@ function AdminDashboard() {
                 className="admin-modal-close"
                 aria-label="Close source configuration"
                 onClick={closeSource}
+                disabled={isSubmittingSource}
               >
                 <X size={19} />
               </button>
@@ -731,6 +1010,23 @@ function AdminDashboard() {
             <p className="admin-source-modal-description">{selectedSource.description}</p>
 
             <form onSubmit={handleSourceSubmit}>
+              {selectedSource.id === 'paste-text' && (
+                <>
+                  <button
+                    type="button"
+                    className="admin-text-button"
+                    disabled={isSubmittingSource}
+                    onClick={() => openSource(selectedSource, null)}
+                  >
+                    Add New Source
+                  </button>
+                  <p role="status">
+                    {isLoadingSource
+                      ? 'Loading saved source...'
+                      : selectedSource.sourceId ? 'Editing saved source' : 'Adding a new source'}
+                  </p>
+                </>
+              )}
               <label className="admin-source-field-label" htmlFor="admin-source-title">
                 Source Title / Label (Optional)
               </label>
@@ -742,6 +1038,7 @@ function AdminDashboard() {
                 onChange={(event) => setSourceTitle(event.target.value)}
                 placeholder={`e.g., ${selectedSource.title} process reference`}
                 maxLength={120}
+                disabled={isLoadingSource || isSubmittingSource || sourceDetailsError}
               />
 
               {selectedSource.id === 'docupedia' && (
@@ -825,7 +1122,7 @@ function AdminDashboard() {
               {selectedSource.id === 'paste-text' && (
                 <>
                   <label className="admin-source-field-label" htmlFor="admin-source-input">Paste Process Information</label>
-                  <textarea id="admin-source-input" className="admin-source-input admin-source-textarea" value={sourceValue} onChange={(event) => setSourceValue(event.target.value)} placeholder="Paste workflow steps, operational handoffs, business rules..." rows={7} required />
+                  <textarea id="admin-source-input" className="admin-source-input admin-source-textarea" value={sourceValue} onChange={(event) => setSourceValue(event.target.value)} placeholder="Paste workflow steps, operational handoffs, business rules..." rows={7} maxLength={200000} disabled={isLoadingSource || isSubmittingSource || sourceDetailsError} required />
                 </>
               )}
 
@@ -850,11 +1147,14 @@ function AdminDashboard() {
                 onChange={(event) => setSourceNotes(event.target.value)}
                 placeholder="Optional context, process area, transformation background, or notes..."
                 rows={3}
+                maxLength={selectedSource.id === 'paste-text' ? 10000 : undefined}
+                disabled={isLoadingSource || isSubmittingSource || sourceDetailsError}
               />
 
               <p className="admin-source-modal-note">
-                Preview only. Submitting creates a session-only record. This form does not upload files,
-                connect to external repositories, or run AI processing.
+                {selectedSource.id === 'paste-text'
+                  ? 'Pasted text is saved to the local knowledge database and split into searchable chunks. No external service is used.'
+                  : 'Preview only. Submitting creates a session-only record. This form does not upload files, connect to external repositories, or run AI processing.'}
               </p>
 
               {notice && (
@@ -865,8 +1165,18 @@ function AdminDashboard() {
               )}
 
               <div className="admin-source-modal-actions">
-                <button type="button" className="admin-secondary-button" onClick={closeSource}>Cancel</button>
-                <button type="submit" className="admin-primary-button">Add Preview Record</button>
+                <button type="button" className="admin-secondary-button" onClick={closeSource} disabled={isSubmittingSource}>Cancel</button>
+                <button
+                  type="submit"
+                  className="admin-primary-button"
+                  disabled={isSubmittingSource || isLoadingSource || sourceDetailsError || (selectedSource.id === 'paste-text' && isLoadingSources)}
+                >
+                  {isSubmittingSource
+                    ? 'Saving...'
+                    : selectedSource.id === 'paste-text'
+                      ? selectedSource.sourceId ? 'Update Text' : 'Save Text'
+                      : 'Add Preview Record'}
+                </button>
               </div>
             </form>
           </section>

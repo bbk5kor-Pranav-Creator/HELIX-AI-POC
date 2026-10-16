@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
-  clearEmployeeSession,
-  getEmployeeSession,
+  clearWorkspaceSession,
+  getWorkspaceSession,
 } from '../../utils/auth';
 
 function EmployeeProfileMenu({
@@ -18,7 +18,7 @@ function EmployeeProfileMenu({
   const containerRef = useRef(null);
   const triggerRef = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
-  const session = getEmployeeSession();
+  const session = getWorkspaceSession();
 
   useEffect(() => {
     if (!isOpen) {
@@ -48,10 +48,7 @@ function EmployeeProfileMenu({
   }, [isOpen]);
 
   const logout = () => {
-    if (role === 'Employee') {
-      clearEmployeeSession();
-    }
-
+    clearWorkspaceSession();
     setIsOpen(false);
     navigate('/login', { replace: true });
   };

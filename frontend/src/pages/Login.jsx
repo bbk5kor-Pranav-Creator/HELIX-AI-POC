@@ -12,7 +12,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { saveEmployeeSession } from '../utils/auth';
+import { saveWorkspaceSession } from '../utils/auth';
 
 function Login() {
   const navigate = useNavigate();
@@ -54,8 +54,15 @@ function Login() {
         throw new Error(data.detail || 'Invalid credentials.');
       }
 
+      if (data.role === 'Employee' || data.role === 'Admin') {
+        saveWorkspaceSession({
+          email: email.trim(),
+          role: data.role,
+          accessToken: data.access_token,
+        });
+      }
+
       if (data.role === 'Employee') {
-        saveEmployeeSession({ email: email.trim(), role: data.role });
         navigate('/employee');
         return;
       }

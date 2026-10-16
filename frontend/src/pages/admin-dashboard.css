@@ -802,6 +802,29 @@
   color: #b42318;
 }
 
+.admin-delete-source {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: auto;
+  padding: 0 10px;
+  border-color: #f0caca;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.admin-delete-source svg {
+  flex-shrink: 0;
+}
+
+.admin-delete-source:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .admin-repository-empty {
   width: 100%;
   box-sizing: border-box;

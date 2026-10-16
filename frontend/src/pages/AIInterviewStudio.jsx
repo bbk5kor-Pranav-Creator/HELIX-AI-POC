@@ -11,16 +11,87 @@ import {
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import EmployeeProfileMenu from '../components/common/EmployeeProfileMenu';
+import { getEmployeeSession } from '../utils/auth';
 import './employee.css';
 import './ai-interview-studio.css';
+
+function buildInterviewQuestions(chunks) {
+  const seen = new Set();
+  const statements = chunks.flatMap((chunk) => {
+    const sentences = chunk.content
+      .split(/(?<=[.!?])\s+|\r?\n+/)
+      .map((sentence) => sentence.trim())
+      .filter(Boolean);
+    return (sentences.length ? sentences : [chunk.content.trim()])
+      .map((sentence) => ({
+        title: chunk.title,
+        statement: sentence.length > 240
+          ? `${sentence.slice(0, 237).trimEnd()}...`
+          : sentence,
+      }));
+  });
+
+  return statements
+    .filter(({ statement }) => {
+      const key = statement.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 5)
+    .map(({ title, statement }, index) => ({
+      id: `${index}-${statement}`,
+      title,
+      prompt: `The source states: “${statement}” How does this step work in your day-to-day process?`,
+    }));
+}
 
 function AIInterviewStudio() {
   const navigate = useNavigate();
   const [interviewStarted, setInterviewStarted] = useState(false);
   const [response, setResponse] = useState('');
+  const [isLoadingContext, setIsLoadingContext] = useState(false);
+  const [contextError, setContextError] = useState('');
+  const [interviewContext, setInterviewContext] = useState(null);
 
-  const startInterview = () => {
+  const startInterview = async () => {
     setInterviewStarted(true);
+    setIsLoadingContext(true);
+    setContextError('');
+    setInterviewContext(null);
+    const session = getEmployeeSession();
+
+    if (!session?.accessToken) {
+      setContextError('Your Employee session is missing or expired. Please sign in again.');
+      setIsLoadingContext(false);
+      return;
+    }
+
+    try {
+      const result = await fetch('/api/knowledge/interview-context', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.accessToken}`,
+        },
+        body: JSON.stringify({
+          query: 'process steps responsibilities roles handoffs decisions exceptions controls',
+        }),
+      });
+      const data = await result.json();
+      if (!result.ok) {
+        throw new Error(data.detail || 'Unable to retrieve interview context.');
+      }
+
+      setInterviewContext({
+        ...data,
+        questions: buildInterviewQuestions(data.chunks),
+      });
+    } catch (error) {
+      setContextError(error.message || 'Unable to retrieve interview context.');
+    } finally {
+      setIsLoadingContext(false);
+    }
   };
 
   return (
@@ -106,8 +177,8 @@ function AIInterviewStudio() {
               <h2>Understand the reality behind the process</h2>
 
               <p className="intro-description">
-                Helix uses documented SOPs and submitted change logs as the
-                context for a structured employee interview.
+                Helix retrieves process text saved by an Admin and uses those
+                source statements to prepare a structured employee interview.
               </p>
 
               <div className="interview-principles">
@@ -117,11 +188,11 @@ function AIInterviewStudio() {
                   </div>
 
                   <div>
-                    <strong>Helix reads documented SOPs and change logs</strong>
+                    <strong>Questions use saved process text</strong>
 
                     <span>
-                      Official process documentation and submitted changes
-                      provide the interview context.
+                      Only text retrieved from the shared knowledge repository
+                      provides interview context.
                     </span>
                   </div>
                 </div>
@@ -132,11 +203,11 @@ function AIInterviewStudio() {
                   </div>
 
                   <div>
-                    <strong>Questions are posed sequentially</strong>
+                    <strong>Questions are grounded in source statements</strong>
 
                     <span>
-                      The interview progresses step-by-step to understand how
-                      activities are actually performed.
+                      Each prompt quotes text returned by the backend and asks
+                      how the described step is performed in practice.
                     </span>
                   </div>
                 </div>
@@ -147,11 +218,11 @@ function AIInterviewStudio() {
                   </div>
 
                   <div>
-                    <strong>Responses capture daily workarounds</strong>
+                    <strong>Questions invite operational context</strong>
 
                     <span>
-                      Employee responses help corporate teams identify
-                      deviations and align official procedures with reality.
+                      Use the prompts to reflect on the process statements
+                      available from saved sources.
                     </span>
                   </div>
                 </div>
@@ -164,29 +235,17 @@ function AIInterviewStudio() {
               </div>
 
               <div className="context-row">
-                <span>Process Context</span>
-                <strong>Ready for AI context</strong>
+                <span>Knowledge Sources</span>
+                <strong>{interviewContext?.sources.length ?? 'Loaded when interview starts'}</strong>
               </div>
 
               <div className="context-row">
-                <span>SOP Documentation</span>
-                <strong className="context-ready">
-                  <CheckCircle2 size={14} />
-                  Available
-                </strong>
-              </div>
-
-              <div className="context-row">
-                <span>Change Logs</span>
-                <strong className="context-ready">
-                  <CheckCircle2 size={14} />
-                  Available
-                </strong>
+                <span>Retrieved Text Chunks</span>
+                <strong>{interviewContext?.chunks.length ?? 'Not requested'}</strong>
               </div>
 
               <p>
-                Actual SOP and change-log availability will be connected
-                through the backend.
+                Interview questions are grounded in text saved by an Admin.
               </p>
             </div>
 
@@ -194,6 +253,7 @@ function AIInterviewStudio() {
               className="start-interview-button"
               type="button"
               onClick={startInterview}
+              disabled={isLoadingContext}
             >
               Start Interview
               <ArrowRight size={16} />
@@ -215,7 +275,7 @@ function AIInterviewStudio() {
 
               <div className="workspace-status">
                 <span />
-                Interview Ready
+                {isLoadingContext ? 'Loading context' : contextError ? 'Context unavailable' : 'Interview Ready'}
               </div>
             </div>
 
@@ -223,24 +283,49 @@ function AIInterviewStudio() {
               <FileText size={15} />
 
               <span>
-                Interview context will be generated from the employee's
-                applicable SOPs and submitted change logs.
+                {interviewContext
+                  ? `Retrieved ${interviewContext.chunks.length} text chunk${interviewContext.chunks.length === 1 ? '' : 's'} from ${interviewContext.sources.map((source) => source.title).join(', ')}.`
+                  : 'Questions are generated only from text retrieved from saved knowledge sources.'}
               </span>
             </div>
 
             <div className="conversation-area">
-              <div className="conversation-placeholder">
-                <div className="placeholder-icon">
-                  <Sparkles size={22} />
+              {isLoadingContext ? (
+                <div className="conversation-placeholder" role="status">
+                  <div className="placeholder-icon">
+                    <Sparkles size={22} />
+                  </div>
+                  <h3>Retrieving interview context...</h3>
+                  <p>Searching text sources saved by an Admin.</p>
                 </div>
-
-                <h3>AI interviewer is ready</h3>
-
-                <p>
-                  The first contextual question will be generated here once
-                  the enterprise AI service and FastAPI backend are connected.
-                </p>
-              </div>
+              ) : contextError ? (
+                <div className="conversation-placeholder" role="alert">
+                  <div className="placeholder-icon">
+                    <FileText size={22} />
+                  </div>
+                  <h3>{contextError}</h3>
+                  <p>Ask an Admin to save relevant process text before starting an interview.</p>
+                </div>
+              ) : interviewContext?.questions.length ? (
+                interviewContext.questions.map((question, index) => (
+                  <div className="conversation-placeholder" key={question.id}>
+                    <div className="placeholder-icon">
+                      <MessageSquare size={22} />
+                    </div>
+                    <h3>Interview question {index + 1}</h3>
+                    <p>{question.prompt}</p>
+                    <p>Source: {question.title}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="conversation-placeholder">
+                  <div className="placeholder-icon">
+                    <Sparkles size={22} />
+                  </div>
+                  <h3>No interview questions are available</h3>
+                  <p>No retrieved source statements were available to form questions.</p>
+                </div>
+              )}
             </div>
 
             <div className="response-area">

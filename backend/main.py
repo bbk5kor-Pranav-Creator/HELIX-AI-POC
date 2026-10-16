@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from knowledge_routes import create_access_token, router as knowledge_router
+
 
 BASE_DIR = Path(__file__).resolve().parent
 ENV_FILE = BASE_DIR / ".env"
@@ -13,6 +15,7 @@ ENV_FILE = BASE_DIR / ".env"
 load_dotenv(ENV_FILE)
 
 app = FastAPI(title="Helix AI V2 API")
+app.include_router(knowledge_router)
 
 
 class LoginRequest(BaseModel):
@@ -62,8 +65,18 @@ def login(request: LoginRequest):
             detail="Invalid corporate email or password.",
         )
 
+    try:
+        access_token = create_access_token(configured_email, role)
+    except RuntimeError as error:
+        raise HTTPException(
+            status_code=500,
+            detail="Session authentication is not configured.",
+        ) from error
+
     return {
         "success": True,
         "role": role,
         "message": "Login successful",
+        "access_token": access_token,
+        "token_type": "bearer",
     }
