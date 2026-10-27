@@ -66,6 +66,10 @@ def initialize_database():
             connection.execute(
                 "ALTER TABLE knowledge_sources ADD COLUMN notes TEXT NOT NULL DEFAULT ''"
             )
+        if "filename" not in columns:
+            connection.execute(
+                "ALTER TABLE knowledge_sources ADD COLUMN filename TEXT NOT NULL DEFAULT ''"
+            )
 
 
 def chunk_text(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
@@ -89,7 +93,7 @@ def chunk_text(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
     return chunks
 
 
-def save_text(title, text, notes=""):
+def save_text(title, text, notes="", *, source_type="paste-text", filename=""):
     initialize_database()
     chunks = chunk_text(text)
     if not chunks:
@@ -101,10 +105,10 @@ def save_text(title, text, notes=""):
         connection.execute(
             """
             INSERT INTO knowledge_sources
-                (id, title, source_type, original_text, notes, created_at)
-            VALUES (?, ?, 'paste-text', ?, ?, ?)
+                (id, title, source_type, original_text, notes, created_at, filename)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (source_id, title, text, notes, created_at),
+            (source_id, title, source_type, text, notes, created_at, filename),
         )
         connection.executemany(
             """
@@ -117,7 +121,8 @@ def save_text(title, text, notes=""):
     return {
         "id": source_id,
         "title": title,
-        "source_type": "paste-text",
+        "source_type": source_type,
+        "filename": filename,
         "created_at": created_at,
         "char_count": len(text),
         "chunk_count": len(chunks),
@@ -180,7 +185,7 @@ def list_sources():
     with _connection() as connection:
         rows = connection.execute(
             """
-            SELECT s.id, s.title, s.source_type, s.created_at, s.notes,
+            SELECT s.id, s.title, s.source_type, s.created_at, s.notes, s.filename,
                    LENGTH(s.original_text) AS char_count,
                    COUNT(c.id) AS chunk_count
             FROM knowledge_sources AS s

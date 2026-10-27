@@ -237,6 +237,163 @@ class KnowledgeTests(unittest.TestCase):
             self.assertEqual(self.request("PUT", path, body, self.admin)[0], 422)
         self.assertEqual(knowledge_store.get_source(source["id"])["title"], source["title"])
 
+    def test_audio_confirmation_edit_retrieve_delete_and_restart(self):
+        status, data = self.request("POST", "/api/knowledge/audio", {
+            "filename": r"C:\recordings\process.mp3", "title": "Audio process",
+            "text": "Audiocobalt handoff. " * 200, "notes": "Reviewed by Admin",
+        }, self.admin)
+        self.assertEqual(status, 200)
+        source = data["source"]
+        self.assertEqual(source["source_type"], "Audio")
+        self.assertEqual(source["filename"], "process.mp3")
+        self.assertGreater(source["chunk_count"], 1)
+        path = f"/api/knowledge/sources/{source['id']}"
+        self.assertEqual(
+            self.request("GET", "/api/knowledge/sources", token=self.admin)[1]["sources"][0]["filename"],
+            "process.mp3",
+        )
+        status, context = self.request("POST", "/api/knowledge/interview-context",
+            {"query": "Audiocobalt"}, self.employee)
+        self.assertEqual(status, 200)
+        self.assertEqual(context["sources"][0]["id"], source["id"])
+        status, edited = self.request("PUT", path, {
+            "title": "Edited recording", "text": "Editedcobalt handoff.", "notes": "Updated",
+        }, self.admin)
+        self.assertEqual(status, 200)
+        self.assertEqual(edited["source"]["source_type"], "Audio")
+        self.assertEqual(edited["source"]["filename"], "process.mp3")
+        self.assertEqual(knowledge_store.search_chunks("Audiocobalt"), [])
+        code = (
+            "import sys; from pathlib import Path; import knowledge_store; "
+            "knowledge_store.DATABASE_PATH = Path(sys.argv[1]); "
+            "source = knowledge_store.get_source(sys.argv[2]); "
+            "assert source['filename'] == 'process.mp3'; "
+            "assert source['source_type'] == 'Audio'; "
+            "assert knowledge_store.search_chunks('Editedcobalt')"
+        )
+        subprocess.run(
+            [sys.executable, "-c", code, str(self.database), source["id"]],
+            cwd=Path(__file__).resolve().parent, check=True,
+        )
+        self.assertEqual(self.request("DELETE", path, token=self.admin)[0], 200)
+        self.assertEqual(self.request("POST", "/api/knowledge/interview-context",
+            {"query": "Editedcobalt"}, self.employee)[0], 404)
+        self.assertEqual(knowledge_store.search_chunks("Editedcobalt"), [])
+
+    def test_audio_authorization_and_confirm_validation(self):
+        body = {"filename": "recording.webm", "text": "Reviewed transcript"}
+        for token, expected in ((None, 401), ("invalid", 401), (self.employee, 403)):
+            self.assertEqual(self.request(
+                "POST", "/api/knowledge/audio", body, token
+            )[0], expected)
+        for invalid in (
+            {**body, "text": " "}, {**body, "filename": "file.txt"},
+            {**body, "text": "x" * 200001}, {**body, "notes": "x" * 10001},
+        ):
+            self.assertIn(self.request(
+                "POST", "/api/knowledge/audio", invalid, self.admin
+            )[0], (415, 422))
+        self.assertEqual(knowledge_store.list_sources(), [])
+
+    def test_audio_multipart_authorization_and_validation(self):
+        boundary = "helix-audio-test"
+        for token, expected in ((None, 401), ("invalid", 401), (self.employee, 403), (self.admin, 415)):
+            body = (
+                f"--{boundary}\r\n"
+                'Content-Disposition: form-data; name="file"; filename="bad.mp3"\r\n'
+                "Content-Type: audio/mpeg\r\n\r\n"
+                f"not audio\r\n--{boundary}--\r\n"
+            ).encode()
+            headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            request = Request(
+                self.url + "/api/knowledge/audio/transcribe",
+                data=body, headers=headers, method="POST",
+            )
+            try:
+                response = urlopen(request, timeout=10)
+            except HTTPError as error:
+                response = error
+            with response:
+                self.assertEqual(response.status, expected)
+        self.assertEqual(knowledge_store.list_sources(), [])
+
+    def test_video_save_edit_retrieve_restart_and_delete(self):
+        text = "Video: silent tutorial.mp4\nDuration: 00:02:00\n[00:00:30] Observed process steps: Videocobalt intake -> approval. " * 50
+        status, data = self.request("POST", "/api/knowledge/video", {
+            "filename": r"C:\recordings\silent tutorial.mp4",
+            "title": "Reviewed video", "text": text, "notes": "Admin checked diagram",
+        }, self.admin)
+        self.assertEqual(status, 200)
+        source = data["source"]
+        self.assertEqual(source["source_type"], "Video")
+        self.assertEqual(source["filename"], "silent tutorial.mp4")
+        self.assertGreater(source["chunk_count"], 1)
+        path = f"/api/knowledge/sources/{source['id']}"
+        listed = self.request("GET", "/api/knowledge/sources", token=self.admin)[1]["sources"]
+        self.assertEqual(listed[0]["source_type"], "Video")
+        status, context = self.request("POST", "/api/knowledge/interview-context", {
+            "query": "process steps responsibilities roles handoffs decisions exceptions controls",
+        }, self.employee)
+        self.assertEqual(status, 200)
+        self.assertIn("Videocobalt", context["chunks"][0]["content"])
+        self.assertEqual(context["sources"][0]["id"], source["id"])
+        status, edited = self.request("PUT", path, {
+            "title": "Edited video", "text": "[00:00:35] Editedvideo process steps.",
+            "notes": "Reviewed correction",
+        }, self.admin)
+        self.assertEqual(status, 200)
+        self.assertEqual(edited["source"]["filename"], "silent tutorial.mp4")
+        self.assertEqual(edited["source"]["source_type"], "Video")
+        self.assertEqual(knowledge_store.search_chunks("Videocobalt"), [])
+        code = (
+            "import sys; from pathlib import Path; import knowledge_store; "
+            "knowledge_store.DATABASE_PATH=Path(sys.argv[1]); "
+            "source=knowledge_store.get_source(sys.argv[2]); "
+            "assert source['source_type']=='Video'; "
+            "assert source['filename']=='silent tutorial.mp4'; "
+            "assert '[00:00:35]' in source['original_text']"
+        )
+        subprocess.run([sys.executable, "-c", code, str(self.database), source["id"]],
+                       cwd=Path(__file__).resolve().parent, check=True)
+        self.assertEqual(self.request("DELETE", path, token=self.admin)[0], 200)
+        self.assertEqual(knowledge_store.search_chunks("Editedvideo"), [])
+        with knowledge_store._connection() as connection:
+            self.assertEqual(connection.execute(
+                "SELECT COUNT(*) FROM knowledge_chunks WHERE source_id = ?", (source["id"],)
+            ).fetchone()[0], 0)
+
+    def test_video_authorization_and_confirmation_validation(self):
+        body = {"filename": "demo.mp4", "text": "Reviewed video process"}
+        for token, expected in ((None, 401), ("invalid", 401), (self.employee, 403)):
+            self.assertEqual(self.request("POST", "/api/knowledge/video", body, token)[0], expected)
+        for invalid in (
+            {**body, "filename": "bad.exe"}, {**body, "text": " "},
+            {**body, "text": "x" * 200001}, {**body, "notes": "x" * 10001},
+        ):
+            self.assertIn(self.request("POST", "/api/knowledge/video", invalid, self.admin)[0], (415, 422))
+        boundary = "helix-video-test"
+        upload = (
+            f"--{boundary}\r\n"
+            'Content-Disposition: form-data; name="file"; filename="bad.txt"\r\n'
+            "Content-Type: text/plain\r\n\r\n"
+            f"not video\r\n--{boundary}--\r\n"
+        ).encode()
+        for token, expected in ((None, 401), ("invalid", 401), (self.employee, 403), (self.admin, 415)):
+            headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            request = Request(self.url + "/api/knowledge/video/process",
+                              data=upload, headers=headers, method="POST")
+            try:
+                response = urlopen(request, timeout=10)
+            except HTTPError as error:
+                response = error
+            with response:
+                self.assertEqual(response.status, expected)
+        self.assertEqual(knowledge_store.list_sources(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

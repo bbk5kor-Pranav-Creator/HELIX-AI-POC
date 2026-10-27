@@ -21,6 +21,8 @@ import {
   X,
 } from 'lucide-react';
 import EmployeeProfileMenu from '../components/common/EmployeeProfileMenu';
+import AudioSourceForm from '../components/common/AudioSourceForm';
+import VideoSourceForm from '../components/common/VideoSourceForm';
 import { getWorkspaceSession } from '../utils/auth';
 import './admin-dashboard.css';
 
@@ -100,25 +102,21 @@ const SOURCE_CATEGORIES = [
     id: 'audio',
     title: 'Audio',
     category: 'AUDIO INGESTION',
-    description: 'Select recordings for future transcription and analysis.',
+    description: 'Transcribe recordings, review the transcript, and save searchable knowledge.',
     icon: AudioLines,
     type: 'green',
-    inputLabel: 'Select audio files',
-    inputType: 'file',
-    accept: 'audio/*',
-    multiple: true,
+    inputLabel: 'Audio transcript',
+    inputType: 'textarea',
   },
   {
     id: 'video',
     title: 'Video',
     category: 'VIDEO INGESTION',
-    description: 'Select video material for future processing.',
+    description: 'Extract speech, on-screen text, and sampled visual knowledge for review.',
     icon: Video,
     type: 'purple',
-    inputLabel: 'Select video files',
-    inputType: 'file',
-    accept: 'video/*',
-    multiple: true,
+    inputLabel: 'Video knowledge',
+    inputType: 'textarea',
   },
   {
     id: 'link',
@@ -166,13 +164,13 @@ const isValidHttpUrl = (value) => {
 
 const savedSourceRecord = (source) => ({
   id: source.id,
-  type: source.source_type,
-  categoryName: 'Paste Text',
-  categoryLabel: 'TEXT INPUT',
+  type: ['Audio', 'Video'].includes(source.source_type) ? source.source_type.toLowerCase() : source.source_type,
+  categoryName: ['Audio', 'Video'].includes(source.source_type) ? source.source_type : 'Paste Text',
+  categoryLabel: source.source_type === 'Video' ? 'VIDEO INGESTION' : source.source_type === 'Audio' ? 'AUDIO INGESTION' : 'TEXT INPUT',
   title: source.title,
   value: `${source.char_count} characters stored`,
   notes: source.notes,
-  files: [],
+  files: source.filename ? [{ name: source.filename }] : [],
   createdAt: source.created_at,
   status: 'Saved',
 });
@@ -204,6 +202,7 @@ function AdminDashboard() {
   const mutationInProgress = useRef(false);
 
   const totalSourcesCount = sources.length;
+  const MediaSourceForm = selectedSource?.id === 'video' ? VideoSourceForm : AudioSourceForm;
 
   const filteredSources = useMemo(() => {
     const query = repositorySearch.trim().toLowerCase();
@@ -339,9 +338,9 @@ function AdminDashboard() {
     if (isSubmittingSource || deletingSourceId) return;
     const savedId = source.id === 'paste-text'
       ? sourceId === undefined
-        ? lastSavedSourceId || sources.find((item) => item.status === 'Saved')?.id
+        ? lastSavedSourceId || sources.find((item) => item.status === 'Saved' && item.type === 'paste-text')?.id
         : sourceId
-      : null;
+      : ['audio', 'video'].includes(source.id) ? sourceId : null;
     setSelectedSource({ ...source, sourceId: savedId || null });
     setIsLoadingSource(Boolean(savedId));
     setSourceDetailsError(false);
@@ -371,6 +370,7 @@ function AdminDashboard() {
   };
 
   const openView = (view) => {
+    if (mutationInProgress.current) return;
     setActiveView(view);
     setSelectedSource(null);
     setNotice('');
@@ -433,7 +433,7 @@ function AdminDashboard() {
       (isFileSource && !isOutlook);
     const needsUrl = (isDocupedia && docupediaMode === 'url') ||
       (selectedSource.inputType === 'url' && !isDocupedia);
-    const needsText = (isOutlook && outlookMode === 'info') || selectedSource.id === 'paste-text';
+    const needsText = (isOutlook && outlookMode === 'info') || selectedSource.inputType === 'textarea';
 
     if (needsFiles && selectedFiles.length === 0) {
       setNotice(isDocupedia
@@ -466,7 +466,7 @@ function AdminDashboard() {
       return;
     }
 
-    if (selectedSource.id === 'paste-text') {
+    if (selectedSource.inputType === 'textarea') {
       const session = getWorkspaceSession();
       if (!session?.accessToken || session.role !== 'Admin') {
         setNotice('Your Admin session is missing or expired. Please sign in again.');
@@ -503,12 +503,12 @@ function AdminDashboard() {
           savedRecord,
           ...current.filter((item) => item.id !== source.id),
         ]);
-        setLastSavedSourceId(source.id);
+        if (selectedSource.id === 'paste-text') setLastSavedSourceId(source.id);
         setSourceTitle(source.title);
         if (!sourceId) setIsLoadingSource(true);
         setSelectedSource((current) => ({ ...current, sourceId: source.id }));
         setSourceLoadError('');
-        setNotice('Text source saved and is available to Employee interviews.');
+        setNotice('Source saved and is available to Employee interviews.');
         setNoticeType('success');
       } catch (error) {
         setNotice(error.message || 'Unable to save the text source.');
@@ -652,7 +652,7 @@ function AdminDashboard() {
           <div>
             <strong>No source records yet</strong>
             <p>
-              Paste Text sources are saved to the backend. Other channels remain
+              Paste Text, Audio, and Video sources are saved to the backend. Other channels remain
               session-only previews.
             </p>
           </div>
@@ -662,7 +662,7 @@ function AdminDashboard() {
           <div className="admin-recent-heading">
             <div>
               <h3>Recent Source Records ({totalSourcesCount})</h3>
-              <p>Saved Paste Text sources and other session previews.</p>
+              <p>Saved Paste Text, Audio, and Video sources and other session previews.</p>
             </div>
             <button type="button" className="admin-text-button" onClick={() => openView('repository')}>
               View repository <ArrowUpRight size={15} />
@@ -697,7 +697,7 @@ function AdminDashboard() {
       <div className="admin-subview-title-row">
         <div>
           <h2>Repository</h2>
-          <p>Review saved Paste Text sources and session-only previews from other channels.</p>
+          <p>Review saved Paste Text, Audio, and Video sources and session-only previews from other channels.</p>
           <button
             type="button"
             className="admin-text-button"
@@ -828,7 +828,7 @@ function AdminDashboard() {
         </div>
       )}
       <p className="admin-repository-disclaimer">
-        Paste Text sources are stored persistently. Other channel entries are session-only previews and clear when this page is refreshed.
+        Paste Text and confirmed Audio/Video sources are stored persistently. Other channel entries are session-only previews and clear when this page is refreshed.
       </p>
     </section>
   );
@@ -1009,6 +1009,24 @@ function AdminDashboard() {
 
             <p className="admin-source-modal-description">{selectedSource.description}</p>
 
+            {['audio', 'video'].includes(selectedSource.id) && !selectedSource.sourceId ? (
+              <MediaSourceForm
+                onBusyChange={(busy) => {
+                  mutationInProgress.current = busy;
+                  setIsSubmittingSource(busy);
+                }}
+                onSaved={(source) => {
+                  setSources((current) => [savedSourceRecord(source), ...current]);
+                  setSelectedSource(null);
+                  setActiveView('repository');
+                  setRepositoryFilter('all');
+                  setRepositorySearch('');
+                  setRepositoryNotice(`${selectedSource.title} knowledge saved and is available to Employee interviews.`);
+                  setRepositoryNoticeType('success');
+                }}
+                onCancel={closeSource}
+              />
+            ) : (
             <form onSubmit={handleSourceSubmit}>
               {selectedSource.id === 'paste-text' && (
                 <>
@@ -1119,9 +1137,9 @@ function AdminDashboard() {
                 </>
               )}
 
-              {selectedSource.id === 'paste-text' && (
+              {selectedSource.inputType === 'textarea' && (
                 <>
-                  <label className="admin-source-field-label" htmlFor="admin-source-input">Paste Process Information</label>
+                  <label className="admin-source-field-label" htmlFor="admin-source-input">{selectedSource.id === 'video' ? 'Edit Video Knowledge' : selectedSource.id === 'audio' ? 'Edit Audio Transcript' : 'Paste Process Information'}</label>
                   <textarea id="admin-source-input" className="admin-source-input admin-source-textarea" value={sourceValue} onChange={(event) => setSourceValue(event.target.value)} placeholder="Paste workflow steps, operational handoffs, business rules..." rows={7} maxLength={200000} disabled={isLoadingSource || isSubmittingSource || sourceDetailsError} required />
                 </>
               )}
@@ -1147,12 +1165,14 @@ function AdminDashboard() {
                 onChange={(event) => setSourceNotes(event.target.value)}
                 placeholder="Optional context, process area, transformation background, or notes..."
                 rows={3}
-                maxLength={selectedSource.id === 'paste-text' ? 10000 : undefined}
+                maxLength={selectedSource.inputType === 'textarea' ? 10000 : undefined}
                 disabled={isLoadingSource || isSubmittingSource || sourceDetailsError}
               />
 
               <p className="admin-source-modal-note">
-                {selectedSource.id === 'paste-text'
+                {['audio', 'video'].includes(selectedSource.id)
+                  ? 'Changes update the saved knowledge and searchable chunks. The original filename is preserved.'
+                  : selectedSource.id === 'paste-text'
                   ? 'Pasted text is saved to the local knowledge database and split into searchable chunks. No external service is used.'
                   : 'Preview only. Submitting creates a session-only record. This form does not upload files, connect to external repositories, or run AI processing.'}
               </p>
@@ -1173,12 +1193,15 @@ function AdminDashboard() {
                 >
                   {isSubmittingSource
                     ? 'Saving...'
+                    : selectedSource.id === 'video' ? 'Update Video Knowledge'
+                    : selectedSource.id === 'audio' ? 'Update Transcript'
                     : selectedSource.id === 'paste-text'
                       ? selectedSource.sourceId ? 'Update Text' : 'Save Text'
                       : 'Add Preview Record'}
                 </button>
               </div>
             </form>
+            )}
           </section>
         </div>
       )}

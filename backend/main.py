@@ -7,6 +7,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from knowledge_routes import create_access_token, router as knowledge_router
+from audio_routes import router as audio_router
+from video_routes import router as video_router
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -16,6 +18,8 @@ load_dotenv(ENV_FILE)
 
 app = FastAPI(title="Helix AI V2 API")
 app.include_router(knowledge_router)
+app.include_router(audio_router)
+app.include_router(video_router)
 
 
 class LoginRequest(BaseModel):
