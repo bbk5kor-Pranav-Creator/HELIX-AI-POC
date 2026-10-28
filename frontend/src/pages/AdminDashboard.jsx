@@ -112,7 +112,7 @@ const SOURCE_CATEGORIES = [
     id: 'video',
     title: 'Video',
     category: 'VIDEO INGESTION',
-    description: 'Extract speech, on-screen text, and sampled visual knowledge for review.',
+    description: 'Transcribe video speech locally with timestamps, review the transcript, and confirm saving.',
     icon: Video,
     type: 'purple',
     inputLabel: 'Video knowledge',

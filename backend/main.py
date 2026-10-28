@@ -1,10 +1,14 @@
 
+import logging
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
+logging.getLogger().setLevel(logging.INFO)
+logging.getLogger("video_extractor").setLevel(logging.INFO)
 
 from knowledge_routes import create_access_token, router as knowledge_router
 from audio_routes import router as audio_router

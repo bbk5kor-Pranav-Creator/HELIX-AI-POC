@@ -1,3 +1,4 @@
+import json
 import re
 import sqlite3
 import uuid
@@ -45,7 +46,8 @@ def initialize_database():
                 source_type TEXT NOT NULL,
                 original_text TEXT NOT NULL,
                 notes TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                metadata_json TEXT NOT NULL DEFAULT '{}'
             );
             CREATE TABLE IF NOT EXISTS knowledge_chunks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,6 +72,10 @@ def initialize_database():
             connection.execute(
                 "ALTER TABLE knowledge_sources ADD COLUMN filename TEXT NOT NULL DEFAULT ''"
             )
+        if "metadata_json" not in columns:
+            connection.execute(
+                "ALTER TABLE knowledge_sources ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'"
+            )
 
 
 def chunk_text(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
@@ -93,7 +99,9 @@ def chunk_text(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
     return chunks
 
 
-def save_text(title, text, notes="", *, source_type="paste-text", filename=""):
+def save_text(
+    title, text, notes="", *, source_type="paste-text", filename="", metadata=None,
+):
     initialize_database()
     chunks = chunk_text(text)
     if not chunks:
@@ -105,10 +113,13 @@ def save_text(title, text, notes="", *, source_type="paste-text", filename=""):
         connection.execute(
             """
             INSERT INTO knowledge_sources
-                (id, title, source_type, original_text, notes, created_at, filename)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (id, title, source_type, original_text, notes, created_at, filename, metadata_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (source_id, title, source_type, text, notes, created_at, filename),
+            (
+                source_id, title, source_type, text, notes, created_at, filename,
+                json.dumps(metadata or {}, ensure_ascii=False),
+            ),
         )
         connection.executemany(
             """
@@ -118,7 +129,7 @@ def save_text(title, text, notes="", *, source_type="paste-text", filename=""):
             [(source_id, index, chunk) for index, chunk in enumerate(chunks)],
         )
 
-    return {
+    source = {
         "id": source_id,
         "title": title,
         "source_type": source_type,
@@ -128,6 +139,9 @@ def save_text(title, text, notes="", *, source_type="paste-text", filename=""):
         "chunk_count": len(chunks),
         "notes": notes,
     }
+    if metadata is not None:
+        source["metadata"] = metadata
+    return source
 
 
 def get_source(source_id):
@@ -142,7 +156,13 @@ def get_source(source_id):
             """,
             (source_id,),
         ).fetchone()
-    return dict(row) if row else None
+    if row is None:
+        return None
+    source = dict(row)
+    metadata = json.loads(source.pop("metadata_json"))
+    if metadata:
+        source["metadata"] = metadata
+    return source
 
 
 def update_text(source_id, title, text, notes):

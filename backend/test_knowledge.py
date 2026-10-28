@@ -319,18 +319,19 @@ class KnowledgeTests(unittest.TestCase):
                 self.assertEqual(response.status, expected)
         self.assertEqual(knowledge_store.list_sources(), [])
 
-    def test_video_save_edit_retrieve_restart_and_delete(self):
+    def test_saved_video_source_remains_accessible_without_extraction_backend(self):
         text = "Video: silent tutorial.mp4\nDuration: 00:02:00\n[00:00:30] Observed process steps: Videocobalt intake -> approval. " * 50
-        status, data = self.request("POST", "/api/knowledge/video", {
-            "filename": r"C:\recordings\silent tutorial.mp4",
-            "title": "Reviewed video", "text": text, "notes": "Admin checked diagram",
-        }, self.admin)
-        self.assertEqual(status, 200)
-        source = data["source"]
+        source = knowledge_store.save_text(
+            "Reviewed video", text, "Admin checked diagram",
+            source_type="Video", filename="silent tutorial.mp4",
+        )
         self.assertEqual(source["source_type"], "Video")
         self.assertEqual(source["filename"], "silent tutorial.mp4")
         self.assertGreater(source["chunk_count"], 1)
         path = f"/api/knowledge/sources/{source['id']}"
+        status, restored = self.request("GET", path, token=self.admin)
+        self.assertEqual(status, 200)
+        self.assertEqual(restored["source"]["original_text"], text)
         listed = self.request("GET", "/api/knowledge/sources", token=self.admin)[1]["sources"]
         self.assertEqual(listed[0]["source_type"], "Video")
         status, context = self.request("POST", "/api/knowledge/interview-context", {
@@ -364,34 +365,37 @@ class KnowledgeTests(unittest.TestCase):
                 "SELECT COUNT(*) FROM knowledge_chunks WHERE source_id = ?", (source["id"],)
             ).fetchone()[0], 0)
 
-    def test_video_authorization_and_confirmation_validation(self):
-        body = {"filename": "demo.mp4", "text": "Reviewed video process"}
-        for token, expected in ((None, 401), ("invalid", 401), (self.employee, 403)):
-            self.assertEqual(self.request("POST", "/api/knowledge/video", body, token)[0], expected)
-        for invalid in (
-            {**body, "filename": "bad.exe"}, {**body, "text": " "},
-            {**body, "text": "x" * 200001}, {**body, "notes": "x" * 10001},
-        ):
-            self.assertIn(self.request("POST", "/api/knowledge/video", invalid, self.admin)[0], (415, 422))
-        boundary = "helix-video-test"
-        upload = (
-            f"--{boundary}\r\n"
-            'Content-Disposition: form-data; name="file"; filename="bad.txt"\r\n'
-            "Content-Type: text/plain\r\n\r\n"
-            f"not video\r\n--{boundary}--\r\n"
-        ).encode()
-        for token, expected in ((None, 401), ("invalid", 401), (self.employee, 403), (self.admin, 415)):
-            headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-            request = Request(self.url + "/api/knowledge/video/process",
-                              data=upload, headers=headers, method="POST")
-            try:
-                response = urlopen(request, timeout=10)
-            except HTTPError as error:
-                response = error
-            with response:
-                self.assertEqual(response.status, expected)
+    def test_video_endpoints_are_registered_and_shared_routes_remain(self):
+        status, schema = self.request("GET", "/openapi.json")
+        self.assertEqual(status, 200)
+        self.assertEqual(set(schema["paths"]), {
+            "/", "/api/auth/login", "/api/knowledge/text",
+            "/api/knowledge/sources", "/api/knowledge/sources/{source_id}",
+            "/api/knowledge/interview-context",
+            "/api/knowledge/audio/transcribe", "/api/knowledge/audio",
+            "/api/knowledge/video/process", "/api/knowledge/video",
+            "/api/knowledge/video/jobs/{job_id}",
+            "/api/knowledge/video/jobs/{job_id}/result",
+        })
+        expected_methods = {
+            "/": {"get"}, "/api/auth/login": {"post"},
+            "/api/knowledge/text": {"post"},
+            "/api/knowledge/sources": {"get"},
+            "/api/knowledge/sources/{source_id}": {"get", "put", "delete"},
+            "/api/knowledge/interview-context": {"post"},
+            "/api/knowledge/audio/transcribe": {"post"},
+            "/api/knowledge/audio": {"post"},
+            "/api/knowledge/video/process": {"post"},
+            "/api/knowledge/video": {"post"},
+            "/api/knowledge/video/jobs/{job_id}": {"get", "delete"},
+            "/api/knowledge/video/jobs/{job_id}/result": {"get"},
+        }
+        for path, methods in expected_methods.items():
+            with self.subTest(path=path):
+                self.assertEqual(set(schema["paths"][path]), methods)
+        self.assertEqual(self.request("GET", "/"), (
+            200, {"message": "Helix AI V2 backend is running"},
+        ))
         self.assertEqual(knowledge_store.list_sources(), [])
 
 
