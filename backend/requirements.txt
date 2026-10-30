@@ -3,3 +3,8 @@ uvicorn[standard]
 python-dotenv
 openai
 python-multipart
+firecrawl-py
+pypdf
+python-docx
+openpyxl
+python-pptx

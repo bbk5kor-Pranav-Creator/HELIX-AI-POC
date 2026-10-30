@@ -11,7 +11,9 @@ logging.getLogger().setLevel(logging.INFO)
 logging.getLogger("video_extractor").setLevel(logging.INFO)
 
 from knowledge_routes import create_access_token, router as knowledge_router
+from docupedia_routes import router as docupedia_router
 from audio_routes import router as audio_router
+from gemini_public_link_routes import router as public_link_router
 from video_routes import router as video_router
 
 
@@ -22,7 +24,9 @@ load_dotenv(ENV_FILE)
 
 app = FastAPI(title="Helix AI V2 API")
 app.include_router(knowledge_router)
+app.include_router(docupedia_router)
 app.include_router(audio_router)
+app.include_router(public_link_router)
 app.include_router(video_router)
 
 

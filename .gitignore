@@ -29,3 +29,7 @@ dist/
 .DS_Store
 Thumbs.db
 backend/.venv/
+
+Proxy.bat
+sample.mp3
+video_extraction_test_result.json

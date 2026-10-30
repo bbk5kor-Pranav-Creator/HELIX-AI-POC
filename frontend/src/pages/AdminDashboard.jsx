@@ -22,6 +22,9 @@ import {
 } from 'lucide-react';
 import EmployeeProfileMenu from '../components/common/EmployeeProfileMenu';
 import AudioSourceForm from '../components/common/AudioSourceForm';
+import DocsSourceForm from '../components/common/DocsSourceForm';
+import DocupediaSourceForm from '../components/common/DocupediaSourceForm';
+import PublicLinkSourceForm from '../components/common/PublicLinkSourceForm';
 import VideoSourceForm from '../components/common/VideoSourceForm';
 import { getWorkspaceSession } from '../utils/auth';
 import './admin-dashboard.css';
@@ -31,11 +34,10 @@ const SOURCE_CATEGORIES = [
     id: 'docupedia',
     title: 'Docupedia',
     category: 'KNOWLEDGE REPOSITORY',
-    description: 'Access and prepare enterprise process documentation from Docupedia.',
+    description: 'Upload business documents, review their structure, and explicitly approve knowledge.',
     icon: BookOpen,
     type: 'blue',
-    inputLabel: 'Docupedia URL',
-    placeholder: 'https://docupedia.bosch.com/wiki/...',
+    inputLabel: 'Upload business documents',
     inputType: 'docupedia',
     accept: '.pdf,.docx,.doc,.txt',
     multiple: false,
@@ -90,7 +92,7 @@ const SOURCE_CATEGORIES = [
     id: 'docs',
     title: 'Docs',
     category: 'DOCUMENT UPLOAD',
-    description: 'Select documents for a future process-analysis workflow.',
+    description: 'Extract, review, and edit process knowledge from uploaded documents.',
     icon: FileText,
     type: 'blue',
     inputLabel: 'Upload Documents',
@@ -120,9 +122,9 @@ const SOURCE_CATEGORIES = [
   },
   {
     id: 'link',
-    title: 'Link',
+    title: 'Public Link',
     category: 'WEB RESOURCE',
-    description: 'Add a URL pointing to a relevant business-process resource.',
+    description: 'Scrape a public webpage and review a source-grounded explanation.',
     icon: LinkIcon,
     type: 'blue',
     inputLabel: 'Resource URL',
@@ -162,18 +164,40 @@ const isValidHttpUrl = (value) => {
   }
 };
 
-const savedSourceRecord = (source) => ({
-  id: source.id,
-  type: ['Audio', 'Video'].includes(source.source_type) ? source.source_type.toLowerCase() : source.source_type,
-  categoryName: ['Audio', 'Video'].includes(source.source_type) ? source.source_type : 'Paste Text',
-  categoryLabel: source.source_type === 'Video' ? 'VIDEO INGESTION' : source.source_type === 'Audio' ? 'AUDIO INGESTION' : 'TEXT INPUT',
-  title: source.title,
-  value: `${source.char_count} characters stored`,
-  notes: source.notes,
-  files: source.filename ? [{ name: source.filename }] : [],
-  createdAt: source.created_at,
-  status: 'Saved',
-});
+const savedSourceRecord = (source) => {
+  const isPublicLink = ['Public Link', 'public-link', 'public_link'].includes(source.source_type);
+  const isAudio = source.source_type === 'Audio';
+  const isVideo = source.source_type === 'Video';
+  const isDocument = source.source_type === 'Document';
+  const isDocupedia = source.source_type === 'Docupedia';
+  return {
+    id: source.id,
+    type: isPublicLink
+      ? 'link'
+      : isAudio || isVideo
+        ? source.source_type.toLowerCase()
+        : isDocupedia ? 'docupedia' : isDocument ? 'docs' : source.source_type,
+    categoryName: isPublicLink
+      ? 'Public Link'
+      : isDocupedia ? 'Docupedia' : isAudio || isVideo ? source.source_type : isDocument ? 'Docs' : 'Paste Text',
+    categoryLabel: isPublicLink
+      ? 'WEB RESOURCE'
+      : isDocupedia ? 'KNOWLEDGE REPOSITORY' : isDocument
+        ? 'DOCUMENT UPLOAD'
+        : isVideo ? 'VIDEO INGESTION' : isAudio ? 'AUDIO INGESTION' : 'TEXT INPUT',
+    title: source.title,
+    value: `${source.char_count} characters stored`,
+    notes: source.notes,
+    files: source.filename ? [{ name: source.filename }] : [],
+    createdAt: source.created_at,
+    status: 'Saved',
+    ...(isDocupedia ? {
+      approvalLabel: (source.metadata?.docupedia?.approval_status
+        ?? (source.char_count > 0 ? 'approved' : 'pending')) === 'approved'
+        ? 'Approved' : 'Pending Approval',
+    } : {}),
+  };
+};
 
 function AdminDashboard() {
   const [activeView, setActiveView] = useState('overview');
@@ -184,7 +208,6 @@ function AdminDashboard() {
   const [isLoadingSources, setIsLoadingSources] = useState(false);
   const [sourceLoadError, setSourceLoadError] = useState('');
   const [selectedFiles, setSelectedFiles] = useState([]);
-  const [docupediaMode, setDocupediaMode] = useState('upload');
   const [outlookMode, setOutlookMode] = useState('upload');
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [sourceNotes, setSourceNotes] = useState('');
@@ -297,7 +320,7 @@ function AdminDashboard() {
 
   useEffect(() => {
     const sourceId = selectedSource?.sourceId;
-    if (!sourceId) return undefined;
+    if (!sourceId || selectedSource.id === 'docupedia') return undefined;
     const controller = new AbortController();
 
     const loadSource = async () => {
@@ -332,7 +355,7 @@ function AdminDashboard() {
 
     loadSource();
     return () => controller.abort();
-  }, [selectedSource?.sourceId]);
+  }, [selectedSource?.sourceId, selectedSource?.id]);
 
   const openSource = (source, sourceId) => {
     if (isSubmittingSource || deletingSourceId) return;
@@ -340,14 +363,18 @@ function AdminDashboard() {
       ? sourceId === undefined
         ? lastSavedSourceId || sources.find((item) => item.status === 'Saved' && item.type === 'paste-text')?.id
         : sourceId
-      : ['audio', 'video'].includes(source.id) ? sourceId : null;
-    setSelectedSource({ ...source, sourceId: savedId || null });
-    setIsLoadingSource(Boolean(savedId));
+      : ['audio', 'video', 'link', 'docs', 'docupedia'].includes(source.id) ? sourceId : null;
+    setSelectedSource({
+      ...source,
+      sourceId: savedId || null,
+      ...(source.id === 'link' && savedId ? { inputType: 'textarea' } : {}),
+      ...(source.id === 'docs' && savedId ? { inputType: 'textarea' } : {}),
+    });
+    setIsLoadingSource(Boolean(savedId) && source.id !== 'docupedia');
     setSourceDetailsError(false);
     setSourceTitle('');
     setSourceValue('');
     setSelectedFiles([]);
-    setDocupediaMode('upload');
     setOutlookMode('upload');
     setIsDraggingFiles(false);
     setSourceNotes('');
@@ -361,7 +388,6 @@ function AdminDashboard() {
     setSourceTitle('');
     setSourceValue('');
     setSelectedFiles([]);
-    setDocupediaMode('upload');
     setOutlookMode('upload');
     setIsDraggingFiles(false);
     setSourceNotes('');
@@ -425,20 +451,15 @@ function AdminDashboard() {
     ) return;
 
     const trimmedValue = sourceValue.trim();
-    const isDocupedia = selectedSource.id === 'docupedia';
     const isOutlook = selectedSource.id === 'outlook';
     const isFileSource = selectedSource.inputType === 'file';
-    const needsFiles = (isDocupedia && docupediaMode === 'upload') ||
-      (isOutlook && outlookMode === 'upload') ||
+    const needsFiles = (isOutlook && outlookMode === 'upload') ||
       (isFileSource && !isOutlook);
-    const needsUrl = (isDocupedia && docupediaMode === 'url') ||
-      (selectedSource.inputType === 'url' && !isDocupedia);
+    const needsUrl = selectedSource.inputType === 'url';
     const needsText = (isOutlook && outlookMode === 'info') || selectedSource.inputType === 'textarea';
 
     if (needsFiles && selectedFiles.length === 0) {
-      setNotice(isDocupedia
-        ? 'Please select a Docupedia document to add.'
-        : isOutlook
+      setNotice(isOutlook
           ? 'Please select an exported email file.'
           : `Please select at least one ${selectedSource.title} file.`);
       setNoticeType('error');
@@ -528,9 +549,7 @@ function AdminDashboard() {
     const recordValue = needsUrl || (isOutlook && outlookMode === 'info') || selectedSource.id === 'paste-text'
       ? trimmedValue
       : '';
-    const inferredTitle = selectedFiles[0]?.name ||
-      (recordValue && isDocupedia ? recordValue.replace(/^https?:\/\//, '') : '') ||
-      `${selectedSource.title} Source`;
+    const inferredTitle = selectedFiles[0]?.name || `${selectedSource.title} Source`;
 
     const record = {
       id: `${selectedSource.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -541,7 +560,7 @@ function AdminDashboard() {
       value: recordValue,
       notes: sourceNotes.trim(),
       files: fileNames,
-      inputMode: isDocupedia ? docupediaMode : isOutlook ? outlookMode : undefined,
+      inputMode: isOutlook ? outlookMode : undefined,
       createdAt: new Date().toISOString(),
       status: 'Preview record',
     };
@@ -556,7 +575,6 @@ function AdminDashboard() {
     setSourceTitle('');
     setSourceValue('');
     setSelectedFiles([]);
-    setDocupediaMode('upload');
     setOutlookMode('upload');
     setIsDraggingFiles(false);
     setSourceNotes('');
@@ -652,7 +670,7 @@ function AdminDashboard() {
           <div>
             <strong>No source records yet</strong>
             <p>
-              Paste Text, Audio, and Video sources are saved to the backend. Other channels remain
+              Docs, Docupedia, Paste Text, Audio, and Video sources are saved to the backend. Other channels remain
               session-only previews.
             </p>
           </div>
@@ -662,7 +680,7 @@ function AdminDashboard() {
           <div className="admin-recent-heading">
             <div>
               <h3>Recent Source Records ({totalSourcesCount})</h3>
-              <p>Saved Paste Text, Audio, and Video sources and other session previews.</p>
+              <p>Saved Docs, Docupedia, Paste Text, Audio, and Video sources and other session previews.</p>
             </div>
             <button type="button" className="admin-text-button" onClick={() => openView('repository')}>
               View repository <ArrowUpRight size={15} />
@@ -680,7 +698,7 @@ function AdminDashboard() {
                     <span>{source.categoryName} · {formatDate(source.createdAt)}</span>
                   </div>
                   <span className="admin-preview-status">
-                    {source.status === 'Saved' ? 'Saved' : 'Preview'}
+                    {source.approvalLabel || (source.status === 'Saved' ? 'Saved' : 'Preview')}
                   </span>
                 </article>
               );
@@ -697,7 +715,7 @@ function AdminDashboard() {
       <div className="admin-subview-title-row">
         <div>
           <h2>Repository</h2>
-          <p>Review saved Paste Text, Audio, and Video sources and session-only previews from other channels.</p>
+          <p>Review saved Documents, Docupedia, Paste Text, Audio, and Video sources alongside session-only previews from other channels.</p>
           <button
             type="button"
             className="admin-text-button"
@@ -774,7 +792,7 @@ function AdminDashboard() {
                   <div className="admin-repository-item-title-row">
                     <strong>{source.title}</strong>
                     <span className="admin-preview-status">
-                      {source.status === 'Saved' ? 'Saved' : 'Session preview'}
+                      {source.approvalLabel || (source.status === 'Saved' ? 'Saved' : 'Session preview')}
                     </span>
                   </div>
                   <span className="admin-repository-category">{source.categoryName} · {source.categoryLabel}{source.inputMode ? ` · ${source.inputMode === 'upload' ? 'File upload mode' : source.inputMode === 'url' ? 'URL mode' : 'Reference details mode'}` : ''}</span>
@@ -797,7 +815,7 @@ function AdminDashboard() {
                       disabled={isLoadingSources || Boolean(deletingSourceId)}
                       onClick={() => openSource(category, source.id)}
                     >
-                      Edit
+                      {source.type === 'docupedia' ? 'Review' : 'Edit'}
                     </button>
                     <button
                       type="button"
@@ -828,7 +846,7 @@ function AdminDashboard() {
         </div>
       )}
       <p className="admin-repository-disclaimer">
-        Paste Text and confirmed Audio/Video sources are stored persistently. Other channel entries are session-only previews and clear when this page is refreshed.
+        Documents, Docupedia, Paste Text, and confirmed Audio/Video sources are stored persistently. Docupedia knowledge becomes searchable only after explicit approval. Other channel entries are session-only previews and clear when this page is refreshed.
       </p>
     </section>
   );
@@ -1009,7 +1027,63 @@ function AdminDashboard() {
 
             <p className="admin-source-modal-description">{selectedSource.description}</p>
 
-            {['audio', 'video'].includes(selectedSource.id) && !selectedSource.sourceId ? (
+            {selectedSource.id === 'docupedia' ? (
+              <DocupediaSourceForm
+                key={selectedSource.sourceId || 'new-docupedia'}
+                sourceId={selectedSource.sourceId}
+                onBusyChange={(busy) => {
+                  mutationInProgress.current = busy;
+                  setIsSubmittingSource(busy);
+                }}
+                onSaved={(source) => {
+                  setSources((current) => [
+                    savedSourceRecord(source),
+                    ...current.filter((item) => item.id !== source.id),
+                  ]);
+                  setRepositoryNotice(source.metadata?.docupedia?.approval_status === 'approved'
+                    ? `${source.title} approved and available to Employee interviews.`
+                    : `${source.title} is pending approval and is not published.`);
+                  setRepositoryNoticeType('success');
+                }}
+                onCancel={closeSource}
+              />
+            ) : selectedSource.id === 'docs' && !selectedSource.sourceId ? (
+              <DocsSourceForm
+                onBusyChange={(busy) => {
+                  mutationInProgress.current = busy;
+                  setIsSubmittingSource(busy);
+                }}
+                onSaved={(source) => {
+                  setSources((current) => [
+                    savedSourceRecord(source),
+                    ...current.filter((item) => item.id !== source.id),
+                  ]);
+                  setRepositoryNotice(`${source.title} saved and is available to Employee interviews.`);
+                  setRepositoryNoticeType('success');
+                }}
+                onCancel={closeSource}
+              />
+            ) : selectedSource.id === 'link' && !selectedSource.sourceId ? (
+              <PublicLinkSourceForm
+                onBusyChange={(busy) => {
+                  mutationInProgress.current = busy;
+                  setIsSubmittingSource(busy);
+                }}
+                onSaved={(source) => {
+                  setSources((current) => [
+                    savedSourceRecord(source),
+                    ...current.filter((item) => item.id !== source.id),
+                  ]);
+                  setSelectedSource(null);
+                  setActiveView('repository');
+                  setRepositoryFilter('all');
+                  setRepositorySearch('');
+                  setRepositoryNotice('Public Link knowledge saved and is available to Employee interviews.');
+                  setRepositoryNoticeType('success');
+                }}
+                onCancel={closeSource}
+              />
+            ) : ['audio', 'video'].includes(selectedSource.id) && !selectedSource.sourceId ? (
               <MediaSourceForm
                 onBusyChange={(busy) => {
                   mutationInProgress.current = busy;
@@ -1058,35 +1132,6 @@ function AdminDashboard() {
                 maxLength={120}
                 disabled={isLoadingSource || isSubmittingSource || sourceDetailsError}
               />
-
-              {selectedSource.id === 'docupedia' && (
-                <>
-                  <div className="admin-source-mode-switch" role="tablist" aria-label="Docupedia input method">
-                    <button type="button" role="tab" aria-selected={docupediaMode === 'upload'} className={docupediaMode === 'upload' ? 'active' : ''} onClick={() => { setDocupediaMode('upload'); setSelectedFiles([]); setSourceValue(''); setNotice(''); }}>
-                      Upload PDF / Document
-                    </button>
-                    <button type="button" role="tab" aria-selected={docupediaMode === 'url'} className={docupediaMode === 'url' ? 'active' : ''} onClick={() => { setDocupediaMode('url'); setSelectedFiles([]); setNotice(''); }}>
-                      Docupedia URL
-                    </button>
-                  </div>
-                  {docupediaMode === 'upload' ? (
-                    <>
-                      <label className="admin-source-field-label" htmlFor="admin-source-files">Upload Document / PDF</label>
-                      <label className={`admin-file-dropzone ${isDraggingFiles ? 'is-dragging' : ''}`} htmlFor="admin-source-files" onDragOver={(event) => { event.preventDefault(); setIsDraggingFiles(true); }} onDragLeave={() => setIsDraggingFiles(false)} onDrop={(event) => { event.preventDefault(); setIsDraggingFiles(false); handleFiles(event.dataTransfer.files); }}>
-                        <UploadCloud size={27} />
-                        <strong>Click to browse or drag and drop</strong>
-                        <span>Accepts PDF, DOCX, DOC, TXT files up to 50 MB</span>
-                        <input id="admin-source-files" type="file" accept=".pdf,.docx,.doc,.txt" multiple={false} onChange={(event) => handleFiles(event.target.files)} />
-                      </label>
-                    </>
-                  ) : (
-                    <>
-                      <label className="admin-source-field-label" htmlFor="admin-source-input">Docupedia URL</label>
-                      <input id="admin-source-input" className="admin-source-input" type="url" value={sourceValue} onChange={(event) => setSourceValue(event.target.value)} placeholder="https://docupedia.bosch.com/wiki/..." required />
-                    </>
-                  )}
-                </>
-              )}
 
               {selectedSource.id === 'outlook' && (
                 <>
@@ -1139,7 +1184,7 @@ function AdminDashboard() {
 
               {selectedSource.inputType === 'textarea' && (
                 <>
-                  <label className="admin-source-field-label" htmlFor="admin-source-input">{selectedSource.id === 'video' ? 'Edit Video Knowledge' : selectedSource.id === 'audio' ? 'Edit Audio Transcript' : 'Paste Process Information'}</label>
+                  <label className="admin-source-field-label" htmlFor="admin-source-input">{selectedSource.id === 'video' ? 'Edit Video Knowledge' : selectedSource.id === 'audio' ? 'Edit Audio Transcript' : selectedSource.id === 'docs' ? 'Edit Document Knowledge' : 'Paste Process Information'}</label>
                   <textarea id="admin-source-input" className="admin-source-input admin-source-textarea" value={sourceValue} onChange={(event) => setSourceValue(event.target.value)} placeholder="Paste workflow steps, operational handoffs, business rules..." rows={7} maxLength={200000} disabled={isLoadingSource || isSubmittingSource || sourceDetailsError} required />
                 </>
               )}
@@ -1172,6 +1217,10 @@ function AdminDashboard() {
               <p className="admin-source-modal-note">
                 {['audio', 'video'].includes(selectedSource.id)
                   ? 'Changes update the saved knowledge and searchable chunks. The original filename is preserved.'
+                  : selectedSource.id === 'link'
+                  ? 'Changes update the saved Public Link explanation and searchable chunks. The source type and stored metadata are preserved.'
+                  : selectedSource.id === 'docs'
+                  ? 'Changes update the saved document content and searchable chunks. The original filename and document metadata are preserved.'
                   : selectedSource.id === 'paste-text'
                   ? 'Pasted text is saved to the local knowledge database and split into searchable chunks. No external service is used.'
                   : 'Preview only. Submitting creates a session-only record. This form does not upload files, connect to external repositories, or run AI processing.'}
@@ -1195,6 +1244,8 @@ function AdminDashboard() {
                     ? 'Saving...'
                     : selectedSource.id === 'video' ? 'Update Video Knowledge'
                     : selectedSource.id === 'audio' ? 'Update Transcript'
+                    : selectedSource.id === 'link' ? 'Update Public Link'
+                    : selectedSource.id === 'docs' ? 'Update Document Knowledge'
                     : selectedSource.id === 'paste-text'
                       ? selectedSource.sourceId ? 'Update Text' : 'Save Text'
                       : 'Add Preview Record'}

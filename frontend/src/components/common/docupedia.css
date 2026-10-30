@@ -1,0 +1,91 @@
+.docupedia-source-form,
+.docupedia-source-form form {
+  display: grid;
+  gap: 16px;
+}
+
+.docupedia-review-card {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #dce5f2;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.docupedia-card-heading,
+.docupedia-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.docupedia-card-heading {
+  justify-content: space-between;
+  overflow-wrap: anywhere;
+}
+
+.docupedia-review-card summary {
+  color: #19365f;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.docupedia-document,
+.docupedia-raw {
+  max-height: 420px;
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid #e1e8f2;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.docupedia-block {
+  margin-bottom: 14px;
+  overflow-wrap: anywhere;
+}
+
+.docupedia-block p,
+.docupedia-raw {
+  white-space: pre-wrap;
+}
+
+.docupedia-block h1 { font-size: 22px; }
+.docupedia-block h2 { font-size: 20px; }
+.docupedia-block h3 { font-size: 18px; }
+.docupedia-block h4 { font-size: 16px; }
+.docupedia-block h5 { font-size: 14px; }
+.docupedia-block h6 { font-size: 13px; }
+
+.docupedia-provenance {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.docupedia-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.docupedia-document table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.docupedia-document td,
+.docupedia-document th {
+  padding: 8px;
+  border: 1px solid #dce5f2;
+  text-align: left;
+  white-space: pre-wrap;
+  min-width: 90px;
+}
+
+.docupedia-editor {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
