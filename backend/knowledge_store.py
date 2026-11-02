@@ -12,6 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATABASE_PATH = BASE_DIR / "data" / "knowledge.db"
 CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 160
+INTERVIEW_SESSION_STATUSES = {"created", "in_progress", "completed", "failed"}
 STOP_WORDS = {
     "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
     "how", "i", "in", "is", "it", "of", "on", "or", "that", "the",
@@ -25,6 +26,18 @@ class DocupediaConflictError(ValueError):
 
 class DocupediaNotFoundError(LookupError):
     """The requested structured Docupedia source does not exist."""
+
+
+class InterviewSessionConflictError(ValueError):
+    """An interview session cannot accept the requested lifecycle change."""
+
+
+class InterviewSessionNotFoundError(LookupError):
+    """The requested interview session does not exist."""
+
+
+class InterviewQuestionNotFoundError(LookupError):
+    """The requested interview question does not exist."""
 
 
 def _connect():
@@ -94,6 +107,74 @@ def initialize_database():
             CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_sources_idempotency_key
             ON knowledge_sources(idempotency_key)
             WHERE idempotency_key IS NOT NULL
+            """
+        )
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS interview_sessions (
+                id TEXT PRIMARY KEY,
+                employee_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'created'
+                    CHECK (status IN ('created', 'in_progress', 'completed', 'failed')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                started_at TEXT,
+                finished_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_interview_sessions_employee_created
+                ON interview_sessions(employee_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_interview_sessions_status
+                ON interview_sessions(status);
+
+            CREATE TABLE IF NOT EXISTS interview_questions (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL
+                    REFERENCES interview_sessions(id) ON DELETE CASCADE,
+                question_order INTEGER NOT NULL CHECK (question_order >= 0),
+                question_text TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE (session_id, question_order)
+            );
+            CREATE INDEX IF NOT EXISTS idx_interview_questions_session_order
+                ON interview_questions(session_id, question_order);
+
+            CREATE TABLE IF NOT EXISTS interview_question_sources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                question_id TEXT NOT NULL
+                    REFERENCES interview_questions(id) ON DELETE CASCADE,
+                knowledge_source_id TEXT
+                    REFERENCES knowledge_sources(id) ON DELETE SET NULL,
+                knowledge_source_id_snapshot TEXT NOT NULL,
+                source_title_snapshot TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE (question_id, knowledge_source_id_snapshot)
+            );
+            CREATE INDEX IF NOT EXISTS idx_interview_question_sources_question
+                ON interview_question_sources(question_id);
+            CREATE INDEX IF NOT EXISTS idx_interview_question_sources_source
+                ON interview_question_sources(knowledge_source_id);
+
+            CREATE TABLE IF NOT EXISTS interview_answers (
+                id TEXT PRIMARY KEY,
+                question_id TEXT NOT NULL
+                    REFERENCES interview_questions(id) ON DELETE CASCADE,
+                answer_order INTEGER NOT NULL CHECK (answer_order >= 0),
+                answer_text TEXT NOT NULL,
+                submitted_at TEXT NOT NULL,
+                UNIQUE (question_id, answer_order)
+            );
+            CREATE INDEX IF NOT EXISTS idx_interview_answers_question_order
+                ON interview_answers(question_id, answer_order);
+
+            CREATE TABLE IF NOT EXISTS interview_analyses (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL
+                    REFERENCES interview_sessions(id) ON DELETE CASCADE,
+                analysis_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_interview_analyses_session_created
+                ON interview_analyses(session_id, created_at);
             """
         )
         connection.executescript(
@@ -217,6 +298,303 @@ def initialize_database():
             CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_blocks_block
                 ON knowledge_chunk_blocks(block_id, ordinal);
             """
+        )
+
+
+def create_interview_session(employee_id):
+    if not isinstance(employee_id, str) or not employee_id.strip():
+        raise ValueError("Employee identity must not be blank.")
+    initialize_database()
+    session_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    with _connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO interview_sessions (id, employee_id, status, created_at, updated_at)
+            VALUES (?, ?, 'created', ?, ?)
+            """,
+            (session_id, employee_id.strip(), now, now),
+        )
+    return get_interview_session(session_id)
+
+
+def update_interview_session_status(session_id, status):
+    if not isinstance(status, str) or status not in INTERVIEW_SESSION_STATUSES:
+        raise ValueError("Interview session status is invalid.")
+    initialize_database()
+    now = datetime.now(timezone.utc).isoformat()
+    with _connection() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        current = connection.execute(
+            "SELECT status FROM interview_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if current is None:
+            raise InterviewSessionNotFoundError("Interview session was not found.")
+        current_status = current["status"]
+        allowed_transitions = {
+            "created": {"in_progress", "completed", "failed"},
+            "in_progress": {"completed", "failed"},
+            "completed": set(),
+            "failed": set(),
+        }
+        if status != current_status and status not in allowed_transitions[current_status]:
+            raise InterviewSessionConflictError(
+                f"Interview session cannot transition from {current_status} to {status}."
+            )
+        if status != current_status:
+            result = connection.execute(
+                """
+                UPDATE interview_sessions
+                SET status = ?,
+                    updated_at = ?,
+                    started_at = CASE
+                        WHEN ? = 'in_progress' THEN COALESCE(started_at, ?)
+                        ELSE started_at
+                    END,
+                    finished_at = CASE
+                        WHEN ? IN ('completed', 'failed') THEN COALESCE(finished_at, ?)
+                        ELSE finished_at
+                    END
+                WHERE id = ?
+                """,
+                (status, now, status, now, status, now, session_id),
+            )
+            if result.rowcount != 1:
+                raise InterviewSessionNotFoundError("Interview session was not found.")
+    return get_interview_session(session_id)
+
+
+def add_interview_question(session_id, question_text, knowledge_source_ids=()):
+    if not isinstance(question_text, str) or not question_text.strip():
+        raise ValueError("Interview question must not be blank.")
+    if not isinstance(knowledge_source_ids, (list, tuple, set)):
+        raise ValueError("Knowledge source IDs must be a list, tuple, or set.")
+    source_ids = list(dict.fromkeys(knowledge_source_ids))
+    if any(not isinstance(source_id, str) or not source_id.strip() for source_id in source_ids):
+        raise ValueError("Knowledge source IDs must not be blank.")
+    initialize_database()
+    question_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    with _connection() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        session = connection.execute(
+            "SELECT status FROM interview_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if session is None:
+            raise InterviewSessionNotFoundError("Interview session was not found.")
+        _ensure_interview_session_mutable(connection, session_id, session["status"], now)
+        row = connection.execute(
+            "SELECT COALESCE(MAX(question_order), -1) + 1 AS next_order "
+            "FROM interview_questions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        question_order = row["next_order"]
+        connection.execute(
+            """
+            INSERT INTO interview_questions
+                (id, session_id, question_order, question_text, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (question_id, session_id, question_order, question_text.strip(), now),
+        )
+        for source_id in source_ids:
+            source = connection.execute(
+                "SELECT id, title FROM knowledge_sources WHERE id = ?", (source_id,)
+            ).fetchone()
+            if source is None:
+                raise ValueError(f"Knowledge source was not found: {source_id}")
+            connection.execute(
+                """
+                INSERT INTO interview_question_sources
+                    (question_id, knowledge_source_id, knowledge_source_id_snapshot,
+                     source_title_snapshot, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (question_id, source["id"], source["id"], source["title"], now),
+            )
+    return get_interview_question(question_id)
+
+
+def record_interview_answer(question_id, answer_text):
+    if not isinstance(answer_text, str) or not answer_text.strip():
+        raise ValueError("Interview answer must not be blank.")
+    initialize_database()
+    answer_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    with _connection() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        question = connection.execute(
+            """
+            SELECT q.session_id, s.status
+            FROM interview_questions AS q
+            JOIN interview_sessions AS s ON s.id = q.session_id
+            WHERE q.id = ?
+            """,
+            (question_id,),
+        ).fetchone()
+        if question is None:
+            raise InterviewQuestionNotFoundError("Interview question was not found.")
+        _ensure_interview_session_mutable(
+            connection, question["session_id"], question["status"], now
+        )
+        row = connection.execute(
+            "SELECT COALESCE(MAX(answer_order), -1) + 1 AS next_order "
+            "FROM interview_answers WHERE question_id = ?",
+            (question_id,),
+        ).fetchone()
+        answer_order = row["next_order"]
+        connection.execute(
+            """
+            INSERT INTO interview_answers
+                (id, question_id, answer_order, answer_text, submitted_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (answer_id, question_id, answer_order, answer_text, now),
+        )
+    return get_interview_answer(answer_id)
+
+
+def save_interview_analysis(session_id, analysis):
+    analysis_json = json.dumps(analysis, ensure_ascii=False, allow_nan=False)
+    initialize_database()
+    analysis_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    with _connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO interview_analyses (id, session_id, analysis_json, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (analysis_id, session_id, analysis_json, now),
+        )
+    return {
+        "id": analysis_id,
+        "session_id": session_id,
+        "analysis": json.loads(analysis_json),
+        "created_at": now,
+    }
+
+
+def get_interview_session(session_id):
+    initialize_database()
+    with _connection() as connection:
+        row = connection.execute(
+            "SELECT * FROM interview_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def list_interview_sessions(employee_id):
+    initialize_database()
+    with _connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT * FROM interview_sessions
+            WHERE employee_id = ?
+            ORDER BY created_at DESC, id DESC
+            """,
+            (employee_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_interview_session_details(session_id):
+    initialize_database()
+    with _connection() as connection:
+        row = connection.execute(
+            "SELECT * FROM interview_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        session = dict(row)
+        questions = connection.execute(
+            """
+            SELECT * FROM interview_questions
+            WHERE session_id = ? ORDER BY question_order
+            """,
+            (session_id,),
+        ).fetchall()
+        session["questions"] = []
+        for question_row in questions:
+            question = dict(question_row)
+            question_id = question["id"]
+            question["knowledge_sources"] = [
+                dict(source)
+                for source in connection.execute(
+                    """
+                    SELECT knowledge_source_id, knowledge_source_id_snapshot,
+                           source_title_snapshot, created_at
+                    FROM interview_question_sources
+                    WHERE question_id = ? ORDER BY id
+                    """,
+                    (question_id,),
+                ).fetchall()
+            ]
+            question["answers"] = [
+                dict(answer)
+                for answer in connection.execute(
+                    """
+                    SELECT * FROM interview_answers
+                    WHERE question_id = ? ORDER BY answer_order
+                    """,
+                    (question_id,),
+                ).fetchall()
+            ]
+            session["questions"].append(question)
+    return session
+
+
+def get_interview_question(question_id):
+    initialize_database()
+    with _connection() as connection:
+        row = connection.execute(
+            "SELECT * FROM interview_questions WHERE id = ?", (question_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        question = dict(row)
+        question["knowledge_sources"] = [
+            dict(source)
+            for source in connection.execute(
+                """
+                SELECT knowledge_source_id, knowledge_source_id_snapshot,
+                       source_title_snapshot, created_at
+                FROM interview_question_sources
+                WHERE question_id = ? ORDER BY id
+                """,
+                (question_id,),
+            ).fetchall()
+        ]
+    return question
+
+
+def get_interview_answer(answer_id):
+    initialize_database()
+    with _connection() as connection:
+        row = connection.execute(
+            "SELECT * FROM interview_answers WHERE id = ?", (answer_id,)
+        ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def _ensure_interview_session_mutable(connection, session_id, status, now):
+    if status in {"completed", "failed"}:
+        raise InterviewSessionConflictError(
+            f"Interview session with status {status} cannot be modified."
+        )
+    if status == "created":
+        connection.execute(
+            """
+            UPDATE interview_sessions
+            SET status = 'in_progress', started_at = ?, updated_at = ?
+            WHERE id = ? AND status = 'created'
+            """,
+            (now, now, session_id),
+        )
+    else:
+        connection.execute(
+            "UPDATE interview_sessions SET updated_at = ? WHERE id = ?",
+            (now, session_id),
         )
 
 
