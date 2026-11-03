@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 import docupedia_routes
 import document_extractor
+import interview_routes
 import knowledge_routes
 import knowledge_store
 from test_document_upload_routes import GeneratedStream, _docx_bytes, _pdf_bytes
@@ -40,6 +41,7 @@ class DocupediaRouteTests(unittest.TestCase):
         knowledge_store.initialize_database()
         self.app = FastAPI()
         self.app.include_router(knowledge_routes.router)
+        self.app.include_router(interview_routes.router)
         self.app.include_router(docupedia_routes.router)
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
@@ -262,11 +264,15 @@ class DocupediaRouteTests(unittest.TestCase):
         self.assertEqual(body["source"]["original_text"], "")
         self.assertEqual(body["source"]["filename"], "procedure.txt")
         self.assertEqual(body["structured_document"], self.structured)
+        categories = self.client.get(
+            "/api/interviews/categories", headers=self.employee
+        ).json()["categories"]
+        self.assertNotIn("docupedia", {category["id"] for category in categories})
         employee = self.client.post(
-            "/api/knowledge/interview-context", json={"query": "Rawquartz"},
+            "/api/interviews/sessions", json={"category_id": "docupedia"},
             headers=self.employee,
         )
-        self.assertEqual(employee.status_code, 404)
+        self.assertEqual(employee.status_code, 409)
         with knowledge_store._connection() as connection:
             self.assertGreater(connection.execute(
                 "SELECT COUNT(*) FROM knowledge_chunks WHERE source_id = ?", (source["id"],)
@@ -385,8 +391,15 @@ class DocupediaRouteTests(unittest.TestCase):
         self.assertEqual(fetched["structured_document"], self.structured)
         self.assertEqual(fetched["approval_status"], "approved")
         self.assertEqual(knowledge_store.search_chunks("Rawquartz"), [])
+        session_response = self.client.post(
+            "/api/interviews/sessions", json={"category_id": "docupedia"},
+            headers=self.employee,
+        )
+        self.assertEqual(session_response.status_code, 201, session_response.text)
+        session_id = session_response.json()["session"]["id"]
         employee = self.client.post(
-            "/api/knowledge/interview-context", json={"query": "Approvedsapphire"},
+            "/api/knowledge/interview-context",
+            json={"session_id": session_id, "category_id": "docupedia"},
             headers=self.employee,
         )
         self.assertEqual(employee.status_code, 200, employee.text)

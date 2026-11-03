@@ -1,14 +1,18 @@
 import json
 import logging
 import os
-import socket
 import time
-from urllib.error import HTTPError, URLError
-from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from gemini_client import (
+    DEFAULT_GEMINI_MODEL,
+    GeminiHTTPError,
+    GeminiResponseError,
+    GeminiTransportError,
+    generate_content,
+)
 from knowledge_routes import require_admin
 from public_link_routes import (
     MAX_SOURCE_CHARS,
@@ -22,7 +26,7 @@ from public_link_routes import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-MODEL = "gemini-3.5-flash"
+MODEL = DEFAULT_GEMINI_MODEL
 MAX_OUTPUT_TOKENS = 4096
 MAX_RESPONSE_BYTES = 2_000_000
 DOCUMENT_POLICY = """Retrieve only the supplied URL using URL Context. Do not follow article links
@@ -42,7 +46,7 @@ Return only the document as plain text with readable headings, not JSON or fence
 If retrieval is unavailable, do not manufacture a document."""
 
 
-def _provider_error(error: HTTPError) -> HTTPException:
+def _provider_error(error: GeminiHTTPError | HTTPError) -> HTTPException:
     try:
         body = json.loads(error.read(16_384))
     except (ValueError, TypeError, UnicodeDecodeError, OSError):
@@ -86,29 +90,21 @@ def _provider_error(error: HTTPError) -> HTTPException:
 
 
 def _request_gemini(api_key: str, payload: dict) -> dict:
-    request = Request(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{quote(MODEL, safe='')}:generateContent",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
-        method="POST",
-    )
     try:
-        with urlopen(request, timeout=90) as response:
-            data = response.read(MAX_RESPONSE_BYTES + 1)
-    except HTTPError as error:
+        return generate_content(
+            api_key=api_key,
+            model=MODEL,
+            payload=payload,
+            timeout=90,
+            max_response_bytes=MAX_RESPONSE_BYTES,
+        )
+    except GeminiHTTPError as error:
         raise _provider_error(error) from None
-    except (URLError, TimeoutError, socket.timeout):
+    except GeminiTransportError:
         logger.warning("Public Link Gemini connection failure")
         raise HTTPException(502, "Unable to reach Gemini. Check connectivity and retry.") from None
-    if len(data) > MAX_RESPONSE_BYTES:
-        raise HTTPException(502, "Gemini response exceeded the transport limit; no preview was accepted.")
-    try:
-        result = json.loads(data)
-    except (ValueError, UnicodeDecodeError):
-        raise HTTPException(502, "Gemini returned an invalid response.") from None
-    if not isinstance(result, dict):
-        raise HTTPException(502, "Gemini returned an invalid response.")
-    return result
+    except GeminiResponseError as error:
+        raise HTTPException(502, f"{error} No preview was accepted.") from None
 
 
 def _usage_metrics(result: dict, latency_ms: float, submitted_chars: int) -> GenerationMetrics:

@@ -12,7 +12,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 from document_extractor import (
@@ -40,8 +40,10 @@ class TextSubmission(BaseModel):
     notes: str = Field(default="", max_length=10_000)
 
 
-class InterviewQuery(BaseModel):
-    query: str = Field(..., min_length=1, max_length=2_000)
+class InterviewContextRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    session_id: UUID
+    category_id: str = Field(min_length=1, max_length=64)
 
 
 class DocumentSaveBatch(BaseModel):
@@ -427,28 +429,29 @@ def delete_source(source_id: UUID, _user=Depends(require_admin)):
 
 @router.post("/api/knowledge/interview-context")
 def get_interview_context(
-    request: InterviewQuery, _user=Depends(require_employee)
+    request: InterviewContextRequest, user=Depends(require_employee)
 ):
-    if not request.query.strip():
-        raise HTTPException(status_code=422, detail="Query must not be blank.")
-
-    if not knowledge_store.has_sources():
+    session = knowledge_store.get_interview_session(str(request.session_id))
+    if session is None or session["employee_id"] != user["sub"]:
+        raise HTTPException(status_code=404, detail="Interview session not found.")
+    if session.get("category_id") != request.category_id:
+        raise HTTPException(
+            status_code=409,
+            detail="The selected category does not match this interview session.",
+        )
+    try:
+        context = knowledge_store.get_interview_category_context(
+            str(request.session_id), request.category_id
+        )
+    except knowledge_store.InterviewSessionNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Interview session not found.") from error
+    except knowledge_store.InterviewSessionConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if not context["chunks"]:
         raise HTTPException(
             status_code=404,
-            detail="No knowledge sources are available for this interview yet.",
+            detail="No selected category knowledge is currently available.",
         )
-    chunks = knowledge_store.search_chunks(request.query.strip())
-    if not chunks:
-        raise HTTPException(
-            status_code=404,
-            detail="No saved text matched this interview query.",
-        )
-
-    sources_by_id = {}
-    for chunk in chunks:
-        sources_by_id[chunk["source_id"]] = {
-            "id": chunk["source_id"],
-            "title": chunk["title"],
-            "created_at": chunk["created_at"],
-        }
-    return {"chunks": chunks, "sources": list(sources_by_id.values())}
+    return context

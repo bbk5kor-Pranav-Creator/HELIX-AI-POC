@@ -178,10 +178,18 @@ class KnowledgeTests(unittest.TestCase):
                 "SELECT COUNT(*) FROM knowledge_chunks WHERE source_id = ?", (other["id"],)
             ).fetchone()[0], other["chunk_count"])
             self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
-        self.assertEqual(self.request("POST", "/api/knowledge/interview-context",
-            {"query": "Deletedquartz"}, self.employee)[0], 404)
-        self.assertEqual(self.request("POST", "/api/knowledge/interview-context",
-            {"query": "Preservedquartz"}, self.employee)[0], 200)
+        status, session = self.request(
+            "POST", "/api/interviews/sessions",
+            {"category_id": "paste-text"}, self.employee,
+        )
+        self.assertEqual(status, 201)
+        status, context = self.request(
+            "POST", "/api/knowledge/interview-context",
+            {"session_id": session["session"]["id"], "category_id": "paste-text"},
+            self.employee,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual([source["id"] for source in context["sources"]], [other["id"]])
         self.assertEqual(self.request("DELETE", path, token=self.admin)[0], 404)
 
     def test_authorization_and_ids(self):
@@ -252,8 +260,16 @@ class KnowledgeTests(unittest.TestCase):
             self.request("GET", "/api/knowledge/sources", token=self.admin)[1]["sources"][0]["filename"],
             "process.mp3",
         )
-        status, context = self.request("POST", "/api/knowledge/interview-context",
-            {"query": "Audiocobalt"}, self.employee)
+        status, session = self.request(
+            "POST", "/api/interviews/sessions",
+            {"category_id": "audio"}, self.employee,
+        )
+        self.assertEqual(status, 201)
+        session_id = session["session"]["id"]
+        status, context = self.request(
+            "POST", "/api/knowledge/interview-context",
+            {"session_id": session_id, "category_id": "audio"}, self.employee,
+        )
         self.assertEqual(status, 200)
         self.assertEqual(context["sources"][0]["id"], source["id"])
         status, edited = self.request("PUT", path, {
@@ -276,8 +292,10 @@ class KnowledgeTests(unittest.TestCase):
             cwd=Path(__file__).resolve().parent, check=True,
         )
         self.assertEqual(self.request("DELETE", path, token=self.admin)[0], 200)
-        self.assertEqual(self.request("POST", "/api/knowledge/interview-context",
-            {"query": "Editedcobalt"}, self.employee)[0], 404)
+        self.assertEqual(self.request(
+            "POST", "/api/knowledge/interview-context",
+            {"session_id": session_id, "category_id": "audio"}, self.employee,
+        )[0], 404)
         self.assertEqual(knowledge_store.search_chunks("Editedcobalt"), [])
 
     def test_audio_authorization_and_confirm_validation(self):
@@ -334,9 +352,18 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(restored["source"]["original_text"], text)
         listed = self.request("GET", "/api/knowledge/sources", token=self.admin)[1]["sources"]
         self.assertEqual(listed[0]["source_type"], "Video")
-        status, context = self.request("POST", "/api/knowledge/interview-context", {
-            "query": "process steps responsibilities roles handoffs decisions exceptions controls",
-        }, self.employee)
+        status, session = self.request(
+            "POST", "/api/interviews/sessions",
+            {"category_id": "video"}, self.employee,
+        )
+        self.assertEqual(status, 201)
+        status, context = self.request(
+            "POST", "/api/knowledge/interview-context",
+            {
+                "session_id": session["session"]["id"],
+                "category_id": "video",
+            }, self.employee,
+        )
         self.assertEqual(status, 200)
         self.assertIn("Videocobalt", context["chunks"][0]["content"])
         self.assertEqual(context["sources"][0]["id"], source["id"])
@@ -372,6 +399,7 @@ class KnowledgeTests(unittest.TestCase):
             "/", "/api/auth/login", "/api/knowledge/text",
             "/api/knowledge/sources", "/api/knowledge/sources/{source_id}",
             "/api/knowledge/interview-context",
+            "/api/interviews/categories",
             "/api/knowledge/documents/preview",
             "/api/knowledge/documents/save",
             "/api/knowledge/docupedia/preview",
@@ -385,6 +413,9 @@ class KnowledgeTests(unittest.TestCase):
             "/api/interviews/sessions/{session_id}/questions",
             "/api/interviews/sessions/{session_id}/questions/{question_id}/answers",
             "/api/interviews/sessions/{session_id}/complete",
+            "/api/interviews/sessions/{session_id}/first-question",
+            "/api/interviews/sessions/{session_id}/next-question",
+            "/api/interviews/sessions/{session_id}/analysis",
             "/api/knowledge/video/process", "/api/knowledge/video",
             "/api/knowledge/video/jobs/{job_id}",
             "/api/knowledge/video/jobs/{job_id}/result",
@@ -395,6 +426,7 @@ class KnowledgeTests(unittest.TestCase):
             "/api/knowledge/sources": {"get"},
             "/api/knowledge/sources/{source_id}": {"get", "put", "delete"},
             "/api/knowledge/interview-context": {"post"},
+            "/api/interviews/categories": {"get"},
             "/api/knowledge/documents/preview": {"post"},
             "/api/knowledge/documents/save": {"post"},
             "/api/knowledge/docupedia/preview": {"post"},
@@ -410,6 +442,9 @@ class KnowledgeTests(unittest.TestCase):
             "/api/interviews/sessions/{session_id}/questions": {"post"},
             "/api/interviews/sessions/{session_id}/questions/{question_id}/answers": {"post"},
             "/api/interviews/sessions/{session_id}/complete": {"post"},
+            "/api/interviews/sessions/{session_id}/first-question": {"post"},
+            "/api/interviews/sessions/{session_id}/next-question": {"post"},
+            "/api/interviews/sessions/{session_id}/analysis": {"get", "post"},
             "/api/knowledge/video/process": {"post"},
             "/api/knowledge/video": {"post"},
             "/api/knowledge/video/jobs/{job_id}": {"get", "delete"},

@@ -3,6 +3,8 @@ import io
 import json
 import tempfile
 import unittest
+import socket
+import ssl
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
@@ -11,6 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 import gemini_public_link_routes as routes
+import gemini_client
 import knowledge_store
 from knowledge_routes import create_access_token, require_admin
 from public_link_routes import PublicLinkExtractionMetadata, ValidatedPublicURL
@@ -199,15 +202,142 @@ class GeminiPublicLinkTests(unittest.TestCase):
             self.assertTrue(knowledge_store.search_chunks("Adminverified"))
 
     def test_transport_handles_network_and_http_failures_without_leaking_details(self):
-        with patch.object(routes, "urlopen", side_effect=URLError("sensitive detail")):
+        with patch.object(gemini_client, "urlopen", side_effect=URLError("sensitive detail")):
             with self.assertRaises(HTTPException) as raised:
                 self.transport("key", {})
             self.assertNotIn("sensitive", raised.exception.detail)
         for status in (401, 429, 500):
-            with patch.object(routes, "urlopen", side_effect=HTTPError(URL, status, "private", {}, None)):
+            with patch.object(gemini_client, "urlopen", side_effect=HTTPError(URL, status, "private", {}, None)):
                 with self.assertRaises(HTTPException) as raised:
                     self.transport("key", {})
                 self.assertEqual(raised.exception.status_code, {401: 503, 429: 429, 500: 502}[status])
+
+    def test_transport_logs_sanitized_exception_class_status_and_proxy_presence(self):
+        failures = (
+            (URLError(socket.gaierror(-2, "temporary DNS lookup failure")), "gaierror", "DNS lookup failure"),
+            (URLError(ssl.SSLCertVerificationError("certificate verify failed")), "SSLCertVerificationError", "certificate verify failed"),
+            (URLError(ConnectionRefusedError(10061, "connection refused")), "ConnectionRefusedError", "connection refused"),
+            (TimeoutError("request timed out"), "TimeoutError", "request timed out"),
+            (socket.timeout("socket timed out"), "TimeoutError", "socket timed out"),
+            (
+                URLError(RuntimeError(
+                    "failed via https://user:proxy-secret@proxy.local:3128 "
+                    "with api_key=api-secret"
+                )),
+                "RuntimeError",
+                "failed via",
+            ),
+        )
+        for error, expected_class, expected_message in failures:
+            with self.subTest(error=type(error).__name__), patch.object(
+                gemini_client, "urlopen", side_effect=error
+            ), patch.object(
+                gemini_client,
+                "getproxies",
+                return_value={"https": "http://proxy-user:proxy-secret@proxy.local:3128"},
+            ), self.assertLogs("gemini_client", level="WARNING") as logs:
+                with self.assertRaises(gemini_client.GeminiTransportError) as raised:
+                    gemini_client.generate_content(
+                        api_key="api-secret", model="test-model", payload={}
+                    )
+
+            self.assertIs(raised.exception.__cause__, error)
+            output = "\n".join(logs.output)
+            self.assertIn(f"exception_class={expected_class}", output)
+            self.assertIn(expected_message, output)
+            self.assertIn("http_status=None", output)
+            self.assertIn("https_proxy_configured=True", output)
+            self.assertNotIn("proxy-user", output)
+            self.assertNotIn("proxy-secret", output)
+            self.assertNotIn("api-secret", output)
+
+        http_error = HTTPError(
+            URL, 407, "proxy auth required", {},
+            io.BytesIO(b"private proxy response body"),
+        )
+        with patch.object(
+            gemini_client, "urlopen", side_effect=http_error
+        ), patch.object(
+            gemini_client,
+            "getproxies",
+            return_value={"https": "http://proxy-user:proxy-secret@proxy.local:3128"},
+        ), self.assertLogs("gemini_client", level="WARNING") as logs:
+            with self.assertRaises(gemini_client.GeminiHTTPError) as raised:
+                gemini_client.generate_content(
+                    api_key="api-secret", model="test-model", payload={}
+                )
+
+        self.assertIs(raised.exception.__cause__, http_error)
+        self.assertEqual(raised.exception.code, 407)
+        self.assertEqual(raised.exception.response_body, b"private proxy response body")
+        output = "\n".join(logs.output)
+        self.assertIn("origin=unknown", output)
+        self.assertIn("http_status=407", output)
+        self.assertIn("https_proxy_configured=True", output)
+        self.assertNotIn("proxy-user", output)
+        self.assertNotIn("proxy-secret", output)
+        self.assertNotIn("api-secret", output)
+        self.assertNotIn("private proxy response body", output)
+
+    def test_http_503_distinguishes_google_error_json_from_proxy_gateway_response(self):
+        google_body = json.dumps({
+            "error": {
+                "code": 503,
+                "status": "UNAVAILABLE",
+                "message": "Gemini service temporarily unavailable.",
+            },
+        }).encode()
+        google_error = HTTPError(
+            URL, 503, "Service Unavailable",
+            {"Server": "ESF", "Content-Type": "application/json; charset=UTF-8"},
+            io.BytesIO(google_body),
+        )
+        with patch.object(gemini_client, "urlopen", side_effect=google_error), self.assertLogs(
+            "gemini_client", level="WARNING"
+        ) as google_logs:
+            with self.assertRaises(gemini_client.GeminiHTTPError) as raised_google:
+                gemini_client.generate_content(
+                    api_key="do-not-log-this-key", model="test-model", payload={}
+                )
+        self.assertEqual(raised_google.exception.origin, "google_api_error_format")
+        self.assertEqual(raised_google.exception.google_error_status, "UNAVAILABLE")
+        self.assertEqual(
+            raised_google.exception.google_error_message,
+            "Gemini service temporarily unavailable.",
+        )
+        google_output = "\n".join(google_logs.output)
+        self.assertIn("server=ESF", google_output)
+        self.assertIn("content_type=application/json", google_output)
+        self.assertIn("google_error_status=UNAVAILABLE", google_output)
+        self.assertIn("google_error_message=Gemini service temporarily unavailable.", google_output)
+        self.assertNotIn("do-not-log-this-key", google_output)
+        self.assertNotIn(google_body.decode(), google_output)
+
+        proxy_body = b"<html><body>secret gateway diagnostic page</body></html>"
+        proxy_error = HTTPError(
+            URL, 503, "Service Unavailable",
+            {
+                "Server": "Corporate Proxy Gateway",
+                "Via": "1.1 internal-gateway",
+                "Content-Type": "text/html",
+            },
+            io.BytesIO(proxy_body),
+        )
+        with patch.object(gemini_client, "urlopen", side_effect=proxy_error), self.assertLogs(
+            "gemini_client", level="WARNING"
+        ) as proxy_logs:
+            with self.assertRaises(gemini_client.GeminiHTTPError) as raised_proxy:
+                gemini_client.generate_content(
+                    api_key="do-not-log-this-key", model="test-model", payload={}
+                )
+        self.assertEqual(raised_proxy.exception.origin, "proxy_or_gateway")
+        self.assertIsNone(raised_proxy.exception.google_error_status)
+        proxy_output = "\n".join(proxy_logs.output)
+        self.assertIn("server=Corporate Proxy Gateway", proxy_output)
+        self.assertIn("via=1.1 internal-gateway", proxy_output)
+        self.assertIn("content_type=text/html", proxy_output)
+        self.assertNotIn("secret gateway diagnostic page", proxy_output)
+        self.assertNotIn("do-not-log-this-key", proxy_output)
 
     def test_provider_error_categories_do_not_expose_provider_text(self):
         for code, reason, message, expected in (
@@ -232,7 +362,7 @@ class GeminiPublicLinkTests(unittest.TestCase):
             (b"{}", None), (b"invalid JSON", 502), (b"[]", 502),
             (b"x" * (routes.MAX_RESPONSE_BYTES + 1), 502),
         ):
-            with self.subTest(status=status), patch.object(routes, "urlopen", return_value=io.BytesIO(data)):
+            with self.subTest(status=status), patch.object(gemini_client, "urlopen", return_value=io.BytesIO(data)):
                 if status is None:
                     self.assertEqual(self.transport("mock-key", {}), {})
                 else:
@@ -243,7 +373,7 @@ class GeminiPublicLinkTests(unittest.TestCase):
     def test_rest_transport_uses_verified_model_and_url_context_tool(self):
         self.preview()
         payload = self.provider.call_args.args[1]
-        with patch.object(routes, "urlopen", return_value=io.BytesIO(b"{}")) as transport:
+        with patch.object(gemini_client, "urlopen", return_value=io.BytesIO(b"{}")) as transport:
             self.transport("test-backend-key", payload)
         request = transport.call_args.args[0]
         self.assertEqual(

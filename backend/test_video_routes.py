@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from starlette.datastructures import Headers
 
 import knowledge_store
+import interview_routes
 import video_routes
 import video_jobs
 from knowledge_routes import create_access_token, router as knowledge_router
@@ -126,6 +127,7 @@ class VideoRouteTests(unittest.TestCase):
         self.app = FastAPI()
         self.app.include_router(self.router)
         self.app.include_router(knowledge_router)
+        self.app.include_router(interview_routes.router)
         self.client = TestClient(self.app)
         self.client.__enter__()
         self.addCleanup(self.client.__exit__, None, None, None)
@@ -214,9 +216,17 @@ class VideoRouteTests(unittest.TestCase):
         self.assertEqual(second.json(), first.json())
         self.assertEqual(len(knowledge_store.list_sources()), 1)
         self.assertEqual(knowledge_store.get_source(source["id"])["original_text"], body["text"])
+        session = self.client.post(
+            "/api/interviews/sessions", headers=self.employee,
+            json={"category_id": "video"},
+        )
+        self.assertEqual(session.status_code, 201, session.text)
         context = self.client.post(
             "/api/knowledge/interview-context", headers=self.employee,
-            json={"query": "updated operators"},
+            json={
+                "session_id": session.json()["session"]["id"],
+                "category_id": "video",
+            },
         )
         self.assertEqual(context.status_code, 200)
         self.assertEqual(context.json()["chunks"][0]["source_id"], source["id"])

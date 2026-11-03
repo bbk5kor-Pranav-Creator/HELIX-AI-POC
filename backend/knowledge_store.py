@@ -7,12 +7,31 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from interview_analysis import validate_analysis_evidence
+
 
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE_PATH = BASE_DIR / "data" / "knowledge.db"
 CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 160
 INTERVIEW_SESSION_STATUSES = {"created", "in_progress", "completed", "failed"}
+INTERVIEW_SOURCE_CATEGORIES = (
+    {"id": "docupedia", "name": "Docupedia", "source_types": ("Docupedia",)},
+    {"id": "docs", "name": "Docs", "source_types": ("Document",)},
+    {"id": "audio", "name": "Audio", "source_types": ("Audio",)},
+    {"id": "video", "name": "Video", "source_types": ("Video",)},
+    {
+        "id": "public-link", "name": "Public Link",
+        "source_types": ("Public Link", "public-link", "public_link"),
+    },
+    {
+        "id": "paste-text", "name": "Paste Text",
+        "source_types": ("paste-text", "Paste Text"),
+    },
+)
+INTERVIEW_SOURCE_CATEGORY_BY_ID = {
+    category["id"]: category for category in INTERVIEW_SOURCE_CATEGORIES
+}
 STOP_WORDS = {
     "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
     "how", "i", "in", "is", "it", "of", "on", "or", "that", "the",
@@ -38,6 +57,10 @@ class InterviewSessionNotFoundError(LookupError):
 
 class InterviewQuestionNotFoundError(LookupError):
     """The requested interview question does not exist."""
+
+
+class InterviewCategoryUnavailableError(ValueError):
+    """The requested category has no eligible knowledge sources."""
 
 
 def _connect():
@@ -114,6 +137,8 @@ def initialize_database():
             CREATE TABLE IF NOT EXISTS interview_sessions (
                 id TEXT PRIMARY KEY,
                 employee_id TEXT NOT NULL,
+                category_id TEXT,
+                knowledge_source_ids_json TEXT NOT NULL DEFAULT '[]',
                 status TEXT NOT NULL DEFAULT 'created'
                     CHECK (status IN ('created', 'in_progress', 'completed', 'failed')),
                 created_at TEXT NOT NULL,
@@ -146,6 +171,7 @@ def initialize_database():
                     REFERENCES knowledge_sources(id) ON DELETE SET NULL,
                 knowledge_source_id_snapshot TEXT NOT NULL,
                 source_title_snapshot TEXT NOT NULL,
+                source_content_snapshot TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 UNIQUE (question_id, knowledge_source_id_snapshot)
             );
@@ -177,6 +203,30 @@ def initialize_database():
                 ON interview_analyses(session_id, created_at);
             """
         )
+        interview_session_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(interview_sessions)")
+        }
+        if "category_id" not in interview_session_columns:
+            connection.execute(
+                "ALTER TABLE interview_sessions ADD COLUMN category_id TEXT"
+            )
+        if "knowledge_source_ids_json" not in interview_session_columns:
+            connection.execute(
+                "ALTER TABLE interview_sessions ADD COLUMN "
+                "knowledge_source_ids_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        interview_question_source_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(interview_question_sources)"
+            )
+        }
+        if "source_content_snapshot" not in interview_question_source_columns:
+            connection.execute(
+                "ALTER TABLE interview_question_sources ADD COLUMN "
+                "source_content_snapshot TEXT NOT NULL DEFAULT ''"
+            )
         connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS document_records (
@@ -301,19 +351,33 @@ def initialize_database():
         )
 
 
-def create_interview_session(employee_id):
+def create_interview_session(employee_id, category_id=None):
     if not isinstance(employee_id, str) or not employee_id.strip():
         raise ValueError("Employee identity must not be blank.")
     initialize_database()
+    if category_id is None:
+        source_ids = []
+    else:
+        sources = get_interview_category_sources(category_id)
+        if not sources:
+            raise InterviewCategoryUnavailableError(
+                "The selected interview category has no available knowledge."
+            )
+        source_ids = [source["id"] for source in sources]
     session_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     with _connection() as connection:
         connection.execute(
             """
-            INSERT INTO interview_sessions (id, employee_id, status, created_at, updated_at)
-            VALUES (?, ?, 'created', ?, ?)
+            INSERT INTO interview_sessions
+                (id, employee_id, category_id, knowledge_source_ids_json,
+                 status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'created', ?, ?)
             """,
-            (session_id, employee_id.strip(), now, now),
+            (
+                session_id, employee_id.strip(), category_id,
+                json.dumps(source_ids), now, now,
+            ),
         )
     return get_interview_session(session_id)
 
@@ -364,7 +428,10 @@ def update_interview_session_status(session_id, status):
     return get_interview_session(session_id)
 
 
-def add_interview_question(session_id, question_text, knowledge_source_ids=()):
+def add_interview_question(
+    session_id, question_text, knowledge_source_ids=(), *,
+    source_content_snapshots=None,
+):
     if not isinstance(question_text, str) or not question_text.strip():
         raise ValueError("Interview question must not be blank.")
     if not isinstance(knowledge_source_ids, (list, tuple, set)):
@@ -378,11 +445,20 @@ def add_interview_question(session_id, question_text, knowledge_source_ids=()):
     with _connection() as connection:
         connection.execute("BEGIN IMMEDIATE")
         session = connection.execute(
-            "SELECT status FROM interview_sessions WHERE id = ?", (session_id,)
+            "SELECT status, category_id, knowledge_source_ids_json "
+            "FROM interview_sessions WHERE id = ?", (session_id,)
         ).fetchone()
         if session is None:
             raise InterviewSessionNotFoundError("Interview session was not found.")
         _ensure_interview_session_mutable(connection, session_id, session["status"], now)
+        if session["category_id"] is not None:
+            scoped_source_ids = set(
+                json.loads(session["knowledge_source_ids_json"] or "[]")
+            )
+            if not set(source_ids).issubset(scoped_source_ids):
+                raise ValueError(
+                    "Interview questions may reference only sources in the selected category."
+                )
         row = connection.execute(
             "SELECT COALESCE(MAX(question_order), -1) + 1 AS next_order "
             "FROM interview_questions WHERE session_id = ?",
@@ -399,7 +475,8 @@ def add_interview_question(session_id, question_text, knowledge_source_ids=()):
         )
         for source_id in source_ids:
             source = connection.execute(
-                "SELECT id, title FROM knowledge_sources WHERE id = ?", (source_id,)
+                "SELECT id, title, original_text FROM knowledge_sources WHERE id = ?",
+                (source_id,),
             ).fetchone()
             if source is None:
                 raise ValueError(f"Knowledge source was not found: {source_id}")
@@ -407,12 +484,265 @@ def add_interview_question(session_id, question_text, knowledge_source_ids=()):
                 """
                 INSERT INTO interview_question_sources
                     (question_id, knowledge_source_id, knowledge_source_id_snapshot,
-                     source_title_snapshot, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                     source_title_snapshot, source_content_snapshot, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (question_id, source["id"], source["id"], source["title"], now),
+                (
+                    question_id, source["id"], source["id"], source["title"],
+                    (source_content_snapshots or {}).get(source_id, source["original_text"]),
+                    now,
+                ),
             )
     return get_interview_question(question_id)
+
+
+def add_initial_interview_question(
+    session_id, question_text, knowledge_source_ids, *,
+    source_content_snapshots=None,
+):
+    if not isinstance(question_text, str) or not question_text.strip():
+        raise ValueError("Interview question must not be blank.")
+    if not isinstance(knowledge_source_ids, (list, tuple, set)):
+        raise ValueError("Knowledge source IDs must be a list, tuple, or set.")
+    source_ids = list(dict.fromkeys(knowledge_source_ids))
+    if not source_ids or any(
+        not isinstance(source_id, str) or not source_id.strip()
+        for source_id in source_ids
+    ):
+        raise ValueError("Initial interview question requires valid knowledge sources.")
+
+    initialize_database()
+    now = datetime.now(timezone.utc).isoformat()
+    question_id = None
+    created = False
+    with _connection() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        session = connection.execute(
+            """
+            SELECT status, category_id, knowledge_source_ids_json
+            FROM interview_sessions WHERE id = ?
+            """,
+            (session_id,),
+        ).fetchone()
+        if session is None:
+            raise InterviewSessionNotFoundError("Interview session was not found.")
+        if session["status"] in {"completed", "failed"}:
+            raise InterviewSessionConflictError(
+                f"Interview session with status {session['status']} cannot be modified."
+            )
+        if not session["category_id"]:
+            raise InterviewSessionConflictError(
+                "An initial question requires a category-scoped interview session."
+            )
+
+        existing = connection.execute(
+            """
+            SELECT id FROM interview_questions
+            WHERE session_id = ? ORDER BY question_order LIMIT 1
+            """,
+            (session_id,),
+        ).fetchone()
+        if existing is not None:
+            question_id = existing["id"]
+        else:
+            scoped_source_ids = set(
+                json.loads(session["knowledge_source_ids_json"] or "[]")
+            )
+            if not set(source_ids).issubset(scoped_source_ids):
+                raise ValueError(
+                    "Initial question sources must belong to the session category."
+                )
+            sources = {}
+            for source_id in source_ids:
+                source = connection.execute(
+                    "SELECT id, title, original_text FROM knowledge_sources WHERE id = ?",
+                    (source_id,),
+                ).fetchone()
+                if source is None:
+                    raise ValueError(f"Knowledge source was not found: {source_id}")
+                sources[source_id] = source
+
+            question_id = str(uuid.uuid4())
+            connection.execute(
+                """
+                INSERT INTO interview_questions
+                    (id, session_id, question_order, question_text, created_at)
+                VALUES (?, ?, 0, ?, ?)
+                """,
+                (question_id, session_id, question_text.strip(), now),
+            )
+            connection.executemany(
+                """
+                INSERT INTO interview_question_sources
+                    (question_id, knowledge_source_id,
+                     knowledge_source_id_snapshot, source_title_snapshot,
+                     source_content_snapshot, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        question_id, source_id, source_id, sources[source_id]["title"],
+                        (source_content_snapshots or {}).get(
+                            source_id, sources[source_id]["original_text"]
+                        ),
+                        now,
+                    )
+                    for source_id in source_ids
+                ],
+            )
+            _ensure_interview_session_mutable(
+                connection, session_id, session["status"], now
+            )
+            created = True
+
+    return get_interview_question(question_id), created
+
+
+def add_adaptive_followup_question(
+    session_id, preceding_question_id, question_text, knowledge_source_ids, *,
+    source_content_snapshots=None,
+):
+    if not isinstance(question_text, str) or not question_text.strip():
+        raise ValueError("Interview question must not be blank.")
+    if not isinstance(knowledge_source_ids, (list, tuple, set)):
+        raise ValueError("Knowledge source IDs must be a list, tuple, or set.")
+    source_ids = list(dict.fromkeys(knowledge_source_ids))
+    if not source_ids or any(
+        not isinstance(source_id, str) or not source_id.strip()
+        for source_id in source_ids
+    ):
+        raise ValueError("A follow-up question requires valid knowledge sources.")
+
+    initialize_database()
+    now = datetime.now(timezone.utc).isoformat()
+    question_id = None
+    created = False
+    with _connection() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        session = connection.execute(
+            """
+            SELECT status, category_id, knowledge_source_ids_json
+            FROM interview_sessions WHERE id = ?
+            """,
+            (session_id,),
+        ).fetchone()
+        if session is None:
+            raise InterviewSessionNotFoundError("Interview session was not found.")
+        if session["status"] in {"completed", "failed"}:
+            raise InterviewSessionConflictError(
+                f"Interview session with status {session['status']} cannot be modified."
+            )
+        if not session["category_id"]:
+            raise InterviewSessionConflictError(
+                "A follow-up question requires a category-scoped interview session."
+            )
+
+        preceding = connection.execute(
+            """
+            SELECT id, question_order FROM interview_questions
+            WHERE id = ? AND session_id = ?
+            """,
+            (preceding_question_id, session_id),
+        ).fetchone()
+        if preceding is None:
+            raise InterviewQuestionNotFoundError(
+                "The preceding interview question was not found."
+            )
+        answer = connection.execute(
+            "SELECT 1 FROM interview_answers WHERE question_id = ? LIMIT 1",
+            (preceding_question_id,),
+        ).fetchone()
+        if answer is None:
+            raise InterviewSessionConflictError(
+                "A submitted answer is required before adding a follow-up question."
+            )
+
+        next_order = preceding["question_order"] + 1
+        successor = connection.execute(
+            """
+            SELECT id FROM interview_questions
+            WHERE session_id = ? AND question_order = ?
+            """,
+            (session_id, next_order),
+        ).fetchone()
+        if successor is not None:
+            successor_answer = connection.execute(
+                "SELECT 1 FROM interview_answers WHERE question_id = ? LIMIT 1",
+                (successor["id"],),
+            ).fetchone()
+            if successor_answer is not None:
+                raise InterviewSessionConflictError(
+                    "The conversation advanced beyond this answered question."
+                )
+            question_id = successor["id"]
+        else:
+            later_question = connection.execute(
+                """
+                SELECT 1 FROM interview_questions
+                WHERE session_id = ? AND question_order > ? LIMIT 1
+                """,
+                (session_id, preceding["question_order"]),
+            ).fetchone()
+            if later_question is not None:
+                raise InterviewSessionConflictError(
+                    "A follow-up question already exists for this conversation turn."
+                )
+
+            scoped_source_ids = set(
+                json.loads(session["knowledge_source_ids_json"] or "[]")
+            )
+            if not set(source_ids).issubset(scoped_source_ids):
+                raise ValueError(
+                    "Follow-up question sources must belong to the session category."
+                )
+            sources = {}
+            for source_id in source_ids:
+                source = connection.execute(
+                    "SELECT id, title, original_text FROM knowledge_sources WHERE id = ?",
+                    (source_id,),
+                ).fetchone()
+                if source is None:
+                    raise ValueError(f"Knowledge source was not found: {source_id}")
+                sources[source_id] = source
+
+            question_id = str(uuid.uuid4())
+            connection.execute(
+                """
+                INSERT INTO interview_questions
+                    (id, session_id, question_order, question_text, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    question_id, session_id, next_order,
+                    question_text.strip(), now,
+                ),
+            )
+            connection.executemany(
+                """
+                INSERT INTO interview_question_sources
+                    (question_id, knowledge_source_id,
+                     knowledge_source_id_snapshot, source_title_snapshot,
+                     source_content_snapshot, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        question_id, source_id, source_id,
+                        sources[source_id]["title"],
+                        (source_content_snapshots or {}).get(
+                            source_id, sources[source_id]["original_text"]
+                        ),
+                        now,
+                    )
+                    for source_id in source_ids
+                ],
+            )
+            _ensure_interview_session_mutable(
+                connection, session_id, session["status"], now
+            )
+            created = True
+
+    return get_interview_question(question_id), created
 
 
 def record_interview_answer(question_id, answer_text):
@@ -455,7 +785,15 @@ def record_interview_answer(question_id, answer_text):
 
 
 def save_interview_analysis(session_id, analysis):
-    analysis_json = json.dumps(analysis, ensure_ascii=False, allow_nan=False)
+    session = get_interview_session_details(session_id)
+    if session is None:
+        raise InterviewSessionNotFoundError("Interview session was not found.")
+    validated_analysis = validate_analysis_evidence(analysis, session)
+    analysis_json = json.dumps(
+        validated_analysis.model_dump(mode="json"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
     initialize_database()
     analysis_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
@@ -475,13 +813,36 @@ def save_interview_analysis(session_id, analysis):
     }
 
 
+def get_interview_analyses(session_id):
+    initialize_database()
+    with _connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT id, session_id, analysis_json, created_at
+            FROM interview_analyses
+            WHERE session_id = ?
+            ORDER BY created_at, id
+            """,
+            (session_id,),
+        ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "session_id": row["session_id"],
+            "analysis": json.loads(row["analysis_json"]),
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
+
+
 def get_interview_session(session_id):
     initialize_database()
     with _connection() as connection:
         row = connection.execute(
             "SELECT * FROM interview_sessions WHERE id = ?", (session_id,)
         ).fetchone()
-    return dict(row) if row is not None else None
+    return _interview_session_from_row(row) if row is not None else None
 
 
 def list_interview_sessions(employee_id):
@@ -495,7 +856,7 @@ def list_interview_sessions(employee_id):
             """,
             (employee_id,),
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [_interview_session_from_row(row) for row in rows]
 
 
 def get_interview_session_details(session_id):
@@ -506,7 +867,7 @@ def get_interview_session_details(session_id):
         ).fetchone()
         if row is None:
             return None
-        session = dict(row)
+        session = _interview_session_from_row(row)
         questions = connection.execute(
             """
             SELECT * FROM interview_questions
@@ -523,7 +884,7 @@ def get_interview_session_details(session_id):
                 for source in connection.execute(
                     """
                     SELECT knowledge_source_id, knowledge_source_id_snapshot,
-                           source_title_snapshot, created_at
+                              source_title_snapshot, source_content_snapshot, created_at
                     FROM interview_question_sources
                     WHERE question_id = ? ORDER BY id
                     """,
@@ -544,6 +905,17 @@ def get_interview_session_details(session_id):
     return session
 
 
+def _interview_session_from_row(row):
+    session = dict(row)
+    raw_source_ids = session.pop("knowledge_source_ids_json", "[]")
+    try:
+        source_ids = json.loads(raw_source_ids or "[]")
+    except (TypeError, ValueError):
+        source_ids = []
+    session["knowledge_source_ids"] = source_ids if isinstance(source_ids, list) else []
+    return session
+
+
 def get_interview_question(question_id):
     initialize_database()
     with _connection() as connection:
@@ -558,7 +930,7 @@ def get_interview_question(question_id):
             for source in connection.execute(
                 """
                 SELECT knowledge_source_id, knowledge_source_id_snapshot,
-                       source_title_snapshot, created_at
+                      source_title_snapshot, source_content_snapshot, created_at
                 FROM interview_question_sources
                 WHERE question_id = ? ORDER BY id
                 """,
@@ -1476,6 +1848,107 @@ def list_sources():
             """
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def _interview_category_source_rows(category, source_ids=None):
+    source_types = category["source_types"]
+    type_placeholders = ", ".join("?" for _ in source_types)
+    conditions = [
+        f"s.source_type IN ({type_placeholders})",
+        "LENGTH(TRIM(s.original_text)) > 0",
+        "EXISTS (SELECT 1 FROM knowledge_chunks c WHERE c.source_id = s.id)",
+        "(s.source_type <> 'Docupedia' OR "
+        "json_extract(s.metadata_json, '$.docupedia.approval_status') = 'approved')",
+    ]
+    parameters = list(source_types)
+    if source_ids is not None:
+        source_ids = list(dict.fromkeys(source_ids))
+        if not source_ids:
+            return []
+        conditions.append(f"s.id IN ({', '.join('?' for _ in source_ids)})")
+        parameters.extend(source_ids)
+
+    with _connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT s.id, s.title, s.source_type, s.original_text, s.created_at
+            FROM knowledge_sources s
+            WHERE """ + " AND ".join(conditions) + " "
+            "ORDER BY s.created_at, s.id",
+            parameters,
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_interview_category_sources(category_id):
+    initialize_database()
+    category = INTERVIEW_SOURCE_CATEGORY_BY_ID.get(category_id)
+    if category is None:
+        raise ValueError("Interview knowledge category is invalid.")
+    return _interview_category_source_rows(category)
+
+
+def list_interview_categories():
+    initialize_database()
+    categories = []
+    for category in INTERVIEW_SOURCE_CATEGORIES:
+        source_count = len(_interview_category_source_rows(category))
+        if source_count:
+            categories.append({
+                "id": category["id"],
+                "name": category["name"],
+                "source_count": source_count,
+            })
+    return categories
+
+
+def get_interview_category_context(session_id, category_id):
+    session = get_interview_session(session_id)
+    if session is None:
+        raise InterviewSessionNotFoundError("Interview session was not found.")
+    if not category_id or session.get("category_id") != category_id:
+        raise InterviewSessionConflictError(
+            "Interview context must use the session's selected knowledge category."
+        )
+    category = INTERVIEW_SOURCE_CATEGORY_BY_ID.get(category_id)
+    if category is None:
+        raise ValueError("Interview knowledge category is invalid.")
+
+    sources = _interview_category_source_rows(
+        category, session.get("knowledge_source_ids", [])
+    )
+    source_ids = [source["id"] for source in sources]
+    chunks = []
+    if source_ids:
+        placeholders = ", ".join("?" for _ in source_ids)
+        with _connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT c.source_id, c.chunk_index, c.content,
+                       s.title, s.created_at
+                FROM knowledge_chunks c
+                JOIN knowledge_sources s ON s.id = c.source_id
+                WHERE c.source_id IN ({placeholders})
+                ORDER BY s.created_at, s.id, c.chunk_index
+                """,
+                source_ids,
+            ).fetchall()
+        chunks = [dict(row) for row in rows]
+
+    return {
+        "category_id": category_id,
+        "sources": [
+            {
+                "id": source["id"],
+                "title": source["title"],
+                "source_type": source["source_type"],
+                "created_at": source["created_at"],
+                "content": source["original_text"],
+            }
+            for source in sources
+        ],
+        "chunks": chunks,
+    }
 
 
 def search_chunks(query, limit=6):

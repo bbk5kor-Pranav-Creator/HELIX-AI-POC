@@ -12,6 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 import knowledge_store
+import interview_routes
 import public_link_routes
 from knowledge_routes import create_access_token, router as knowledge_router
 
@@ -977,6 +978,7 @@ class PublicLinkPreviewRouteTests(unittest.TestCase):
         app = FastAPI()
         app.include_router(public_link_routes.router)
         app.include_router(knowledge_router)
+        app.include_router(interview_routes.router)
         self.client = TestClient(app)
         self.client.__enter__()
         self.addCleanup(self.client.__exit__, None, None, None)
@@ -1201,16 +1203,26 @@ class PublicLinkPreviewRouteTests(unittest.TestCase):
             knowledge_store.chunk_text(edited_text),
         )
         self.assertTrue(knowledge_store.search_chunks("Admin-reviewed"))
+        employee_headers = {
+            "Authorization": f"Bearer {create_access_token('employee@example.test', 'Employee')}"
+        }
+        session_response = self.client.post(
+            "/api/interviews/sessions",
+            headers=employee_headers,
+            json={"category_id": "public-link"},
+        )
+        self.assertEqual(session_response.status_code, 201, session_response.text)
         employee_response = self.client.post(
             "/api/knowledge/interview-context",
-            headers={
-                "Authorization": f"Bearer {create_access_token('employee@example.test', 'Employee')}",
+            headers=employee_headers,
+            json={
+                "session_id": session_response.json()["session"]["id"],
+                "category_id": "public-link",
             },
-            json={"query": "Admin-reviewed"},
         )
         self.assertEqual(employee_response.status_code, 200, employee_response.text)
         self.assertEqual(employee_response.json()["chunks"][0]["source_id"], body["source"]["id"])
-        self.assertIn(edited_text, employee_response.json()["chunks"][0]["content"])
+        self.assertIn(edited_text, employee_response.json()["sources"][0]["content"])
         generate.assert_not_called()
 
     def test_existing_crud_keeps_public_link_type_and_metadata(self):
